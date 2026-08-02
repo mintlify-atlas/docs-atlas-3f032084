@@ -1,0 +1,279 @@
+---
+title: "Update an Existing Product in the TuKit Marketplace"
+sidebarTitle: "Update Product"
+description: "Modify the fields or files of an existing product by its ID. Requires admin level 2 authentication and accepts multipart/form-data with optional file replacements."
+---
+
+The Update Product endpoint lets an admin partially or fully overwrite an existing marketplace product. All body fields and file fields are optional — only the values you include are applied, and any file you upload replaces the corresponding stored file on the server. The endpoint first checks that the product exists, then verifies admin level 2 authorization before making any changes. If a numeric `discount` value is supplied, the endpoint automatically recalculates and persists `discountPrice` as `price * (1 - discount / 100)`.
+
+**POST** `/api/product/update/:productId`
+
+---
+
+## Authentication
+
+<Warning>
+  Every request must include a valid JWT in the `token-access` header. The
+  authenticated user must also hold the **admin level 2** role
+  (`name: "admin"`, `value: "2"`). Requests from non-admin users return
+  HTTP `203`.
+</Warning>
+
+| Header         | Value              | Required |
+| -------------- | ------------------ | -------- |
+| `token-access` | `<your JWT token>` | ✅ Yes   |
+
+---
+
+## Path Parameters
+
+<ParamField path="productId" type="string" required>
+  The MongoDB ObjectId of the product to update. Returned as `_id` when the
+  product was created or listed.
+</ParamField>
+
+---
+
+## Request Body
+
+This endpoint accepts `multipart/form-data`. All fields are optional; omitted fields retain their existing values.
+
+### Text Fields
+
+<ParamField body="title" type="string">
+  New display name for the product.
+</ParamField>
+
+<ParamField body="description" type="string">
+  New long-form description.
+</ParamField>
+
+<ParamField body="category" type="string">
+  Product category. Allowed values: `"Uniforme"` | `"Tipografía"`.
+</ParamField>
+
+<ParamField body="price" type="number">
+  Updated base price. If `discount` is also provided, `discountPrice` is
+  recalculated from this value.
+</ParamField>
+
+<ParamField body="format" type="string">
+  Updated design file format string, e.g. `"AI"`, `"PNG"`, `"PSD"`.
+</ParamField>
+
+<ParamField body="typeProduct" type="string">
+  Updated payment type. Allowed values: `"Pago"` | `"Gratuito"`.
+</ParamField>
+
+<ParamField body="discount" type="string">
+  Discount percentage expressed as a numeric string, e.g. `"10"` for a 10%
+  discount. When provided alongside `price`, the server calculates
+  `discountPrice = price * (1 - discount / 100)` and stores both values.
+</ParamField>
+
+### File Fields
+
+Each file field accepts at most **1 file**. Providing a file replaces the existing stored file for that field.
+
+<ParamField body="archivoUrl" type="file">
+  Replacement design file. Replaces the previously stored design file.
+</ParamField>
+
+<ParamField body="imageUrl" type="file">
+  Replacement preview image.
+</ParamField>
+
+<ParamField body="shirtGif" type="file">
+  Replacement shirt demonstration GIF or image.
+</ParamField>
+
+<ParamField body="shortsGif" type="file">
+  Replacement shorts demonstration GIF or image.
+</ParamField>
+
+---
+
+## Response
+
+### 200 — Product Updated
+
+<ResponseField name="msj" type="string">
+  `"Producto actualizado correctamente"`
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  Always `true` on success.
+</ResponseField>
+
+<ResponseField name="productUpdate" type="object">
+  The full product document after the update is applied.
+
+  <Expandable title="Product fields">
+    <ResponseField name="_id" type="string">
+      MongoDB ObjectId of the product.
+    </ResponseField>
+    <ResponseField name="title" type="string">
+      Product title.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Product description.
+    </ResponseField>
+    <ResponseField name="category" type="string">
+      `"Uniforme"` or `"Tipografía"`.
+    </ResponseField>
+    <ResponseField name="price" type="number">
+      Base price.
+    </ResponseField>
+    <ResponseField name="format" type="string">
+      Design file format string.
+    </ResponseField>
+    <ResponseField name="typeProduct" type="string">
+      `"Pago"` or `"Gratuito"`.
+    </ResponseField>
+    <ResponseField name="archivoUrl" type="array">
+      Stored file path entries for the design file.
+    </ResponseField>
+    <ResponseField name="imageUrl" type="array">
+      Stored file path entries for the preview image.
+    </ResponseField>
+    <ResponseField name="shirtGif" type="array">
+      Stored file path entries for the shirt GIF.
+    </ResponseField>
+    <ResponseField name="shortsGif" type="array">
+      Stored file path entries for the shorts GIF.
+    </ResponseField>
+    <ResponseField name="discount" type="string">
+      Discount label or numeric percentage string.
+    </ResponseField>
+    <ResponseField name="discountPrice" type="string">
+      Calculated discounted price. Auto-populated when `discount` is sent.
+    </ResponseField>
+    <ResponseField name="minCant" type="number">
+      Minimum purchase quantity.
+    </ResponseField>
+    <ResponseField name="date" type="string">
+      Original creation date, ISO 8601.
+    </ResponseField>
+    <ResponseField name="user" type="object">
+      Snapshot of the admin who created the product.
+      <Expandable title="user fields">
+        <ResponseField name="_id" type="string">User ID.</ResponseField>
+        <ResponseField name="userName" type="string">Username.</ResponseField>
+        <ResponseField name="email" type="string">Email address.</ResponseField>
+        <ResponseField name="roles" type="array">Array of role objects `{ name, value }`.</ResponseField>
+        <ResponseField name="activate" type="array">Array of activation status objects.</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 creation timestamp.
+    </ResponseField>
+    <ResponseField name="updatedAt" type="string">
+      ISO 8601 last-updated timestamp, reflecting this update.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Discount Calculation
+
+<Note>
+  When you supply a `discount` string whose numeric value is valid (e.g.
+  `"10"`, `"25.5"`) **and** the request also includes a `price` value,
+  the server automatically sets:
+
+  ```
+  discountPrice = price × (1 − discount / 100)
+  ```
+
+  For example, `price=20` and `discount="10"` yields `discountPrice=18`.
+  The `discountPrice` field is stored as a `String` in the database.
+</Note>
+
+---
+
+## Error Responses
+
+| Status | Condition                               | `status` |
+| ------ | --------------------------------------- | -------- |
+| `404`  | No product found with the given ID      | `false`  |
+| `203`  | Authenticated user is not admin level 2 | `false`  |
+| `500`  | Unexpected server error                 | —        |
+
+```json 404 — Product Not Found
+{
+  "msj": "Producto no encontrado",
+  "status": false
+}
+```
+
+```json 203 — Not Authorized
+{
+  "msj": "No estás autorizado para agregar productos",
+  "status": false
+}
+```
+
+---
+
+## Example
+
+<Note>
+  Replace `<YOUR_TOKEN>` with a valid JWT for an admin level 2 user, and
+  `<PRODUCT_ID>` with the target product's `_id`.
+</Note>
+
+<Tabs>
+  <Tab title="Text fields only">
+    ```bash cURL
+    curl -X POST https://your-api-domain.com/api/product/update/665a1f2e8c4b2a001e3d9f01 \
+      -H "token-access: <YOUR_TOKEN>" \
+      -F "price=15.99" \
+      -F "discount=10" \
+      -F "typeProduct=Pago"
+    ```
+  </Tab>
+  <Tab title="With file replacement">
+    ```bash cURL
+    curl -X POST https://your-api-domain.com/api/product/update/665a1f2e8c4b2a001e3d9f01 \
+      -H "token-access: <YOUR_TOKEN>" \
+      -F "title=Club Deportivo Tigres 2025 — Edición Especial" \
+      -F "price=15.99" \
+      -F "discount=10" \
+      -F "imageUrl=@/path/to/new-preview.png"
+    ```
+  </Tab>
+</Tabs>
+
+```json Success Response
+{
+  "msj": "Producto actualizado correctamente",
+  "status": true,
+  "productUpdate": {
+    "_id": "665a1f2e8c4b2a001e3d9f01",
+    "title": "Club Deportivo Tigres 2025 — Edición Especial",
+    "description": "Kit completo de uniforme para temporada 2025.",
+    "category": "Uniforme",
+    "price": 15.99,
+    "format": "AI",
+    "typeProduct": "Pago",
+    "archivoUrl": ["storage/product/23design.ai"],
+    "imageUrl": ["storage/product/3new-preview.png"],
+    "shirtGif": ["storage/product/12shirt.gif"],
+    "shortsGif": ["storage/product/45shorts.gif"],
+    "discount": "10",
+    "discountPrice": "14.391",
+    "minCant": 1,
+    "date": "2025-06-01T14:30:00.000Z",
+    "user": {
+      "_id": "664f0a1c3b2e1a001d2c8e00",
+      "userName": "adminuser",
+      "email": "admin@tukit.com",
+      "roles": [{ "name": "admin", "value": "2" }],
+      "activate": [{ "name": "active", "value": "true" }]
+    },
+    "createdAt": "2025-06-01T14:30:00.000Z",
+    "updatedAt": "2025-06-02T09:15:00.000Z"
+  }
+}
+```

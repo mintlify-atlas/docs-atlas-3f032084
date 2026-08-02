@@ -1,0 +1,66 @@
+---
+title: "TuKit API: Sporting Designs Marketplace Backend"
+sidebarTitle: "Introduction"
+description: "TuKit is a Node.js/Express REST API for a sporting designs marketplace, supporting JWT auth, product management, and order workflows with MongoDB."
+---
+
+TuKit is a Node.js and Express backend API that powers a marketplace for downloadable sporting uniform designs and typography. It gives designers a platform to upload their creations — both free and paid — while buyers can browse, purchase, and download them. Only the marketplace owner can publish new designs, ensuring quality control across the catalog. TuKit handles everything from secure user registration and email verification to file uploads backed by Google Cloud Storage, making it a complete solution for running a digital sporting-designs storefront.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="JWT Auth & Email Verification" icon="lock">
+    Secure registration and login with JSON Web Tokens. New accounts require email verification via a one-time code before they can sign in, keeping the user base clean and authenticated.
+  </Card>
+  <Card title="Google OAuth 2.0" icon="google">
+    Passport.js-powered Google OAuth 2.0 flow lets users authenticate with their Google account via `/auth/google`, with a success redirect to the protected area of the app.
+  </Card>
+  <Card title="Product Management with Cloud Storage" icon="cloud-arrow-up">
+    Full CRUD for sporting design products. Files and images are stored in Google Cloud Storage via the `@google-cloud/storage` SDK, with image processing handled by Sharp and Multer.
+  </Card>
+  <Card title="Shopping Cart & Payment Workflow" icon="cart-shopping">
+    Users can add and remove products from a persistent shopping cart stored in MongoDB. The cart resource lives at `/api/shopping-cart` and integrates with the user and product collections.
+  </Card>
+  <Card title="Rate Limiting & IP Blocking" icon="shield-halved">
+    `express-rate-limit` enforces per-IP request windows on sensitive endpoints like login and registration. Repeat offenders are written to a `BlockedIp` collection and permanently denied access.
+  </Card>
+  <Card title="Role-Based Access Control" icon="user-shield">
+    User roles are managed via the `updateRoles` endpoint, allowing an admin to elevate or restrict accounts. Protected routes are gated by the `Token` middleware, which validates the JWT on every request.
+  </Card>
+</CardGroup>
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Runtime | Node.js 18+ |
+| Framework | Express 4 |
+| Database | MongoDB via Mongoose 8 |
+| File Storage | Google Cloud Storage (`@google-cloud/storage`) |
+| Authentication | Passport.js with `passport-google-oauth20` |
+| Email | Nodemailer 7 |
+| Token Signing | `jsonwebtoken` 9 |
+| Password Hashing | `bcrypt` 5 |
+| Image Processing | Sharp, Multer |
+| Transpilation | Babel (`@babel/preset-env`) + Nodemon |
+
+## Architecture Overview
+
+TuKit organises its API surface into three resource groups, all mounted under the `/api` base path:
+
+- **`/api/user`** — Registration, email verification, login, password recovery, account updates, role management, and account deletion. Most mutation routes are protected by the `Token` middleware.
+- **`/api/product`** — Full CRUD for sporting design products, including file upload to Google Cloud Storage and paginated listing.
+- **`/api/shopping-cart`** — Cart management: add items, remove items, and list the current cart for the authenticated user.
+
+Each group has its own Express `Router`, controller module, and Mongoose model, keeping concerns cleanly separated inside `src/routes/`, `src/controllers/`, and `src/models/`.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Clone the repo, set up your environment variables, and make your first API call in under 5 minutes.
+  </Card>
+  <Card title="Auth Overview" icon="key" href="/auth/overview">
+    Deep dive into JWT authentication, email verification, password recovery, and Google OAuth flows.
+  </Card>
+</CardGroup>

@@ -1,0 +1,121 @@
+---
+title: "Log In to a TuKit User Account — TuKit API"
+sidebarTitle: "Login"
+description: "Authenticate with email and password. Returns a signed JWT valid for 365 days plus the authenticated user's profile data."
+---
+
+The login endpoint validates the user's credentials and, on success, issues a JSON Web Token (JWT) signed with the server's secret key. The token encodes the user's `id`, `userName`, `email`, `roles`, and `activate` arrays and is valid for **365 days**. The token is also persisted on the user document in the database so the server can reference the current token. The account must have been verified via the [Verify Account](/api/users/verify-account) endpoint before login is permitted — unverified accounts are rejected with a `403` response regardless of whether the password is correct.
+
+**POST** `/api/user/login`
+
+## Authentication
+
+No authentication required.
+
+## Request Body
+
+<ParamField body="email" type="string" required>
+  The registered email address. Lookup is performed with the exact value provided, so casing must match what is stored (all emails are stored lowercase by the registration flow).
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  The account password in plain text. Compared against the stored bcrypt hash using `bcrypt.compare`.
+</ParamField>
+
+## Response
+
+### 200 — Success
+
+<ResponseField name="msj" type="string">
+  A welcome message (`"Bienvenido!"`).
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  Always `true` on success.
+</ResponseField>
+
+<ResponseField name="token" type="string">
+  A signed JWT string. Include this value in the `token-access` header for all protected endpoints. The token expires after **365 days**.
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  A subset of the authenticated user's profile.
+
+  <Expandable title="user fields">
+    <ResponseField name="id" type="string">
+      MongoDB ObjectId of the user.
+    </ResponseField>
+    <ResponseField name="userName" type="string">
+      The user's display name.
+    </ResponseField>
+    <ResponseField name="email" type="string">
+      The user's lowercased email address.
+    </ResponseField>
+    <ResponseField name="roles" type="array">
+      Array of role objects, e.g. `[{ name: "Usuario", value: "1" }]`. Admin users carry `{ name: "admin", value: "2" }`.
+    </ResponseField>
+    <ResponseField name="activate" type="array">
+      Array of activation status objects, e.g. `[{ name: "Activado", value: "1" }]`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error Responses
+
+| Status | Cause |
+|--------|-------|
+| `403`  | One or more required fields (`email`, `password`) are missing from the request body. |
+| `403`  | The account exists but has not yet been verified (no `login_code_confirmed` set or `activate` value is not `"1"`). |
+| `203`  | No user found for the provided email address. |
+| `203`  | The provided password does not match the stored hash. |
+| `500`  | Unexpected server or database error. |
+
+<Note>
+  Store the returned `token` securely (e.g. in memory or a secure HTTP-only cookie). Pass it as the `token-access` request header on all endpoints that require authentication.
+</Note>
+
+## Example
+
+```bash
+curl -X POST https://your-tukit-api.com/api/user/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "marcos@example.com",
+    "password": "SuperSecret123"
+  }'
+```
+
+**Success response:**
+
+```json
+{
+  "msj": "Bienvenido!",
+  "status": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY0ZjFhMmIzYzRkNWU2ZjdhOGI5YzBkMSIsInVzZXJOYW1lIjoiTWFyY29zRGVzaWducyIsImVtYWlsIjoibWFyY29zQGV4YW1wbGUuY29tIiwicm9sZXMiOlt7Im5hbWUiOiJVc3VhcmlvIiwidmFsdWUiOiIxIn1dLCJhY3RpdmF0ZSI6W3sibmFtZSI6IkFjdGl2YWRvIiwidmFsdWUiOiIxIn1dfQ.SIGNATURE",
+  "user": {
+    "id": "64f1a2b3c4d5e6f7a8b9c0d1",
+    "userName": "MarcosDesigns",
+    "email": "marcos@example.com",
+    "roles": [{ "name": "Usuario", "value": "1" }],
+    "activate": [{ "name": "Activado", "value": "1" }]
+  }
+}
+```
+
+**Error — account not yet verified:**
+
+```json
+{
+  "msj": "Tu cuenta aún no está activa. Por favor, confirma tu cuenta utilizando el código de verificación que te hemos enviado al correo",
+  "status": false
+}
+```
+
+**Error — wrong password:**
+
+```json
+{
+  "msj": "Contraseña incorrecta. Inténtalo nuevamente",
+  "status": false
+}
+```

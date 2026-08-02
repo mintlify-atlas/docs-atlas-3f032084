@@ -1,0 +1,126 @@
+---
+title: "Uploading Files and Images in TuKit"
+sidebarTitle: "File Uploads"
+description: "TuKit processes product and payment files with Multer and Sharp, then stores them in Google Cloud Storage. Learn the expected fields and upload flow."
+---
+
+TuKit handles two types of file uploads — product design files (uploaded when creating or editing products) and payment proof images (uploaded when placing an order). All files are processed with Sharp and stored in Google Cloud Storage. Multer handles the initial multipart parsing and writes files to local disk storage; from there, the `imageGenerate()` utility resizes images, converts them to WebP, uploads every variant to Google Cloud Storage, and returns the public URLs. Local temporary files are removed by `deleteImages()` once the upload completes.
+
+## Product File Fields
+
+The product router configures Multer with `diskStorage` pointed at `storage/product` and uses `.fields()` to accept four named file fields in a single request:
+
+```javascript
+const upload = multer({ storage }).fields([
+  { name: "archivoUrl",  maxCount: 1 },
+  { name: "imageUrl",    maxCount: 1 },
+  { name: "shirtGif",    maxCount: 1 },
+  { name: "shortsGif",   maxCount: 1 },
+]);
+```
+
+<CardGroup cols={2}>
+  <Card title="archivoUrl" icon="file-zipper">
+    **The design file.** Accepts non-image formats: `.pdf`, `.rar`, `.zip`, `.psd`, `.cdr`, `.gif`. Uploaded as-is to Google Cloud Storage without Sharp processing.
+  </Card>
+  <Card title="imageUrl" icon="image">
+    **Product preview image.** Accepts `.jpg`, `.jpeg`, `.png`, `.webp`. Resized by Sharp to `lg` (1080×1080) and `md` (500×500) variants, both converted to WebP at 70% quality.
+  </Card>
+  <Card title="shirtGif" icon="shirt">
+    **Animated shirt preview.** Treated as a non-image binary (`.gif`) and uploaded directly to Google Cloud Storage without resizing.
+  </Card>
+  <Card title="shortsGif" icon="film">
+    **Animated shorts preview.** Same handling as `shirtGif` — uploaded directly without Sharp processing.
+  </Card>
+</CardGroup>
+
+Both `archivoUrl` and `imageUrl` accept exactly one file (`maxCount: 1`). All four fields are optional — omit any field that is not relevant to the product being created or updated.
+
+## Payment Proof Field
+
+The shopping-cart router configures a separate Multer instance that writes to `storage/image_pay` and uses `.array()` to accept **multiple files** under a single field name:
+
+```javascript
+const upload = multer({ storage }).array("image_proof");
+```
+
+<ParamField body="image_proof" type="file[]">
+  One or more images serving as proof of payment. Sent to `POST /api/shopping-cart/load/:shoppingCartId/voucher`. Multer accepts any number of files under this field name.
+</ParamField>
+
+## Upload Flow
+
+<Steps>
+  <Step title="Multer receives the multipart request">
+    Multer parses the `multipart/form-data` body. Files are written to the local disk under `storage/product` (product routes) or `storage/image_pay` (payment routes). Filenames are randomised with a numeric prefix to avoid collisions:
+    ```javascript
+    filename: (req, file, cb) => {
+      cb(null, Math.floor(Math.random() * 50) + file.originalname);
+    }
+    ```
+  </Step>
+  <Step title="imageGenerate() processes each file">
+    For each uploaded file, `imageGenerate()` checks the file extension:
+    - **Image files** (`.jpg`, `.jpeg`, `.png`, `.webp`) — Sharp resizes to `lg` (1080×1080) and `md` (500×500), converts both to WebP at 70% quality, and writes the variants to the same destination directory.
+    - **Other files** (`.pdf`, `.rar`, `.zip`, `.psd`, `.cdr`, `.gif`) — uploaded directly to Cloud Storage without any processing.
+  </Step>
+  <Step title="uploadImageStorage() uploads to Google Cloud Storage">
+    Each output file (original or Sharp variant) is uploaded to the GCS bucket configured in `config.NAMEGOOGLECLOUD` via the `@google-cloud/storage` SDK. The public URL takes the form:
+    ```
+    https://storage.googleapis.com/<bucket-name>/<timestamp><filename>
+    ```
+  </Step>
+  <Step title="deleteImages() removes local temp files">
+    After all uploads complete, `deleteImages()` receives the list of local paths collected during processing and calls `fs.unlinkSync()` on each one. A `Set` is used internally to prevent double-deletion of the same path.
+  </Step>
+</Steps>
+
+## Sending a Multipart Request
+
+Use `multipart/form-data` encoding when creating a new product. Pass all text fields alongside the file fields in a single request:
+
+```bash
+curl -X POST https://your-api.com/api/product/agregate \
+  -H "token-access: <your-jwt>" \
+  -F "title=Jersey Deportivo Pro" \
+  -F "description=Diseño profesional para equipo" \
+  -F "category=Uniforme" \
+  -F "price=15.99" \
+  -F "format=AI" \
+  -F "typeProduct=Pago" \
+  -F "imageUrl=@/path/to/preview.jpg" \
+  -F "archivoUrl=@/path/to/design.ai" \
+  -F "shirtGif=@/path/to/shirt.gif" \
+  -F "shortsGif=@/path/to/shorts.gif"
+```
+
+The same four file fields apply when **editing** an existing product:
+
+```bash
+curl -X POST https://your-api.com/api/product/update/:productId \
+  -H "token-access: <your-jwt>" \
+  -F "title=Jersey Deportivo Pro v2" \
+  -F "imageUrl=@/path/to/new-preview.jpg" \
+  -F "archivoUrl=@/path/to/new-design.ai"
+```
+
+## Uploading Payment Proof
+
+Send payment proof images to the voucher endpoint after a shopping cart has been created. Multiple images can be attached in a single request:
+
+```bash
+curl -X POST https://your-api.com/api/shopping-cart/load/:shoppingCartId/voucher \
+  -H "token-access: <your-jwt>" \
+  -F "image_proof=@/path/to/receipt1.jpg" \
+  -F "image_proof=@/path/to/receipt2.jpg"
+```
+
+Replace `:shoppingCartId` with the `_id` of the shopping cart document returned when the order was created.
+
+<Note>
+  Files must be sent as `multipart/form-data`. Do not set `Content-Type: application/json` on upload requests — doing so will cause Multer to skip file parsing entirely and the file fields will be empty.
+</Note>
+
+<Warning>
+  The `storage/product` and `storage/image_pay` directories must exist on the server before the API starts. Multer's `diskStorage` does **not** create missing destination directories automatically — if either directory is absent, Multer will return an error on the first upload attempt.
+</Warning>

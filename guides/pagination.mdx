@@ -1,0 +1,126 @@
+---
+title: "Paginating Results in TuKit API"
+sidebarTitle: "Pagination"
+description: "TuKit uses URL parameter pagination via a Paginate middleware. Pass pag and perpage in the URL path to control page size and offset."
+---
+
+TuKit applies consistent pagination across all list endpoints using a shared `Paginate` middleware. Page number and results per page are embedded in the URL path rather than query string parameters — both are declared as optional route segments (`:pag?` and `:perpage?`), so they can be omitted entirely to fall back to defaults. The middleware translates those values into `skippag` and `limit` properties on `req.body`, which are then used by every controller to construct the underlying MongoDB query.
+
+## URL Pattern
+
+All paginated endpoints follow this pattern:
+
+```
+POST /api/<resource>/list-<suffix>/:pag?/:perpage?
+```
+
+Here are the paginated routes currently defined across the product and shopping-cart routers:
+
+```
+POST /api/product/search-uniform/:query/:pag?/:perpage?
+POST /api/product/search-typography/:query/:pag?/:perpage?
+POST /api/product/get-all-products-uni-typo/:typeCategory/:pag?/:perpage?
+POST /api/product/get-all-products-payment-free/:paymentAndFree/:pag?/:perpage?
+POST /api/shopping-cart/list-my-buy/:pag?/:perpage?
+POST /api/shopping-cart/list-my-shopping/:pag?/:perpage?
+```
+
+<Note>
+  All paginated endpoints use `POST`, not `GET`. Authentication via the `token-access` header is required on most routes — check individual endpoint references for their specific middleware chain.
+</Note>
+
+## Paginate Middleware
+
+The `Paginate` middleware reads `:pag` and `:perpage` from the URL params and writes the computed `skippag` and `limit` values onto `req.body` before the controller runs:
+
+```javascript
+export const Paginate = (req, res, next) => {
+  let perpage = req.params.perpage ? req.params.perpage : 10;
+  let pag = req.params.pag > 1 ? req.params.pag - 1 : 0;
+
+  req.body.skippag = pag * perpage;
+  req.body.limit = perpage;
+  next();
+};
+```
+
+**How the offset is calculated:**
+
+- If `pag` is greater than `1`, the skip value is `(pag - 1) * perpage`. For example, page 3 with 10 results per page skips `(3 - 1) * 10 = 20` documents.
+- If `pag` is `1` or absent, `pag` resolves to `0`, so `skippag = 0 * perpage = 0` — the query starts from the first document.
+
+**Defaults when params are omitted:**
+
+| Param | Default | Meaning |
+|-------|---------|---------|
+| `:perpage` | `10` | Returns up to 10 results per page |
+| `:pag` | `0` (resolves to skip `0`) | Starts from the beginning of the result set |
+
+Controllers consume `req.body.skippag` and `req.body.limit` directly in their MongoDB queries (e.g. `.skip(skippag).limit(limit)`).
+
+## Response Shape
+
+Every paginated endpoint returns a consistent envelope that includes a `pagination` object alongside the data array:
+
+```json
+{
+  "msj": "...",
+  "status": true,
+  "data": [...],
+  "pagination": {
+    "pag": 2,
+    "perpage": 10,
+    "pags": 5
+  }
+}
+```
+
+<CardGroup cols={3}>
+  <Card title="pag" icon="bookmark">
+    The current page number as passed in the request URL.
+  </Card>
+  <Card title="perpage" icon="list-ol">
+    The number of results per page as passed in the request URL (or `10` if omitted).
+  </Card>
+  <Card title="pags" icon="layer-group">
+    The **total number of pages** available, calculated as `Math.ceil(totalCount / perpage)`. Use this to drive "next page" logic in your client.
+  </Card>
+</CardGroup>
+
+To determine whether more pages exist, compare `pag` against `pags`. When `pag >= pags`, you have reached the last page.
+
+## Examples
+
+The examples below use the `list-my-buy` endpoint, but the same pattern applies to every paginated route.
+
+**Page 1, 10 results per page (explicit):**
+
+```bash
+curl -X POST https://your-api.com/api/shopping-cart/list-my-buy/1/10 \
+  -H "token-access: <your-jwt>"
+```
+
+**Page 2, 5 results per page:**
+
+```bash
+curl -X POST https://your-api.com/api/shopping-cart/list-my-buy/2/5 \
+  -H "token-access: <your-jwt>"
+```
+
+**Default — no pagination params:**
+
+```bash
+curl -X POST https://your-api.com/api/shopping-cart/list-my-buy \
+  -H "token-access: <your-jwt>"
+```
+
+**Paginating a product search (page 3, 20 results):**
+
+```bash
+curl -X POST https://your-api.com/api/product/search-uniform/jersey/3/20 \
+  -H "token-access: <your-jwt>"
+```
+
+<Tip>
+  Omitting both `:pag` and `:perpage` from the URL is equivalent to requesting page 1 with 10 results. The middleware sets `skippag` to `0` and `limit` to `10`, so the first ten documents are returned without any offset.
+</Tip>

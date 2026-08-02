@@ -1,0 +1,159 @@
+---
+title: "List All TuKit Users (Admin Only) — TuKit API"
+sidebarTitle: "List Users"
+description: "Retrieve a paginated list of all registered users, sorted by creation date. Restricted to users with the admin role (name: admin, value: 2)."
+---
+
+This admin-only endpoint returns a paginated list of every registered user in the TuKit database, ordered by `createdAt` ascending (oldest accounts first). Pagination is handled by the `Paginate` middleware, which reads the optional `pag` and `perpage` path parameters and attaches `skippag` and `limit` values to `req.body` before the controller runs. The requesting user must be identified by `adminId` in the URL and must hold the role `{ name: "admin", value: "2" }` — standard users will receive a `203` rejection. Pagination metadata is returned alongside the user array so clients can implement page-based navigation.
+
+**POST** `/api/user/list/:adminId/user/:pag?/:perpage?`
+
+## Authentication
+
+<ParamField header="token-access" type="string" required>
+  A valid JWT obtained from the [Login](/api/users/login) endpoint.
+</ParamField>
+
+## Path Parameters
+
+<ParamField path="adminId" type="string" required>
+  The MongoDB ObjectId of the requesting administrator. This account must carry the role `{ name: "admin", value: "2" }` or the request will be rejected.
+</ParamField>
+
+<ParamField path="pag" type="number">
+  The page number to retrieve. Defaults to `1` when omitted. Must be a positive integer.
+</ParamField>
+
+<ParamField path="perpage" type="number">
+  The number of user records to return per page. Defaults to `10` when omitted.
+</ParamField>
+
+## Request Body
+
+No request body is required for this endpoint. Pagination values (`skippag`, `limit`) are computed and injected by the `Paginate` middleware from the path parameters.
+
+## Response
+
+### 200 — Success
+
+<ResponseField name="msj" type="string">
+  Loading message returned with the data: `"Cargando usuarios..."`.
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  Always `true` on success.
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of user documents matching the current page. Users are sorted by `createdAt` ascending.
+
+  <Expandable title="User document fields">
+    <ResponseField name="_id" type="string">
+      MongoDB ObjectId of the user.
+    </ResponseField>
+    <ResponseField name="userName" type="string">
+      The user's display name.
+    </ResponseField>
+    <ResponseField name="email" type="string">
+      The user's lowercased email address.
+    </ResponseField>
+    <ResponseField name="roles" type="array">
+      Array of role objects, e.g. `[{ name: "Usuario", value: "1" }]`.
+    </ResponseField>
+    <ResponseField name="activate" type="array">
+      Array of activation status objects, e.g. `[{ name: "Activado", value: "1" }]`.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 timestamp of account creation.
+    </ResponseField>
+    <ResponseField name="updatedAt" type="string">
+      ISO 8601 timestamp of last update.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="pagination" type="object">
+  Metadata about the current page and total pages available.
+
+  <Expandable title="pagination fields">
+    <ResponseField name="pag" type="string">
+      The current page number as provided in the URL path parameter.
+    </ResponseField>
+    <ResponseField name="perpage" type="number">
+      The number of records per page (the `limit` value computed by the `Paginate` middleware).
+    </ResponseField>
+    <ResponseField name="pags" type="number">
+      Total number of pages available, calculated as `Math.ceil(totalUserCount / perpage)`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error Responses
+
+| Status | Cause |
+|--------|-------|
+| `203`  | The `adminId` account does not hold the role `{ name: "admin", value: "2" }`, or no user document was found for `adminId`. |
+| `500`  | Unexpected server or database error. |
+
+<Note>
+  The result set is sorted by `createdAt` in ascending order — the oldest registered accounts appear first. Use the `pag` and `perpage` path parameters to navigate through large user bases.
+</Note>
+
+## Examples
+
+**Page 1, 10 users per page (defaults):**
+
+```bash
+curl -X POST https://your-tukit-api.com/api/user/list/64f9z9z9z9z9z9z9z9z9z9z9/user \
+  -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+**Page 2, 5 users per page:**
+
+```bash
+curl -X POST https://your-tukit-api.com/api/user/list/64f9z9z9z9z9z9z9z9z9z9z9/user/2/5 \
+  -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+**Success response:**
+
+```json
+{
+  "msj": "Cargando usuarios...",
+  "status": true,
+  "data": [
+    {
+      "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+      "userName": "MarcosDesigns",
+      "email": "marcos@example.com",
+      "roles": [{ "name": "Usuario", "value": "1" }],
+      "activate": [{ "name": "Activado", "value": "1" }],
+      "createdAt": "2024-06-01T12:00:00.000Z",
+      "updatedAt": "2024-06-02T09:30:00.000Z"
+    },
+    {
+      "_id": "64f2b3c4d5e6f7a8b9c0d2e3",
+      "userName": "LauraSport",
+      "email": "laura@example.com",
+      "roles": [{ "name": "Usuario", "value": "1" }],
+      "activate": [{ "name": "Activado", "value": "1" }],
+      "createdAt": "2024-06-03T08:15:00.000Z",
+      "updatedAt": "2024-06-03T08:15:00.000Z"
+    }
+  ],
+  "pagination": {
+    "pag": "1",
+    "perpage": 10,
+    "pags": 5
+  }
+}
+```
+
+**Error — requestor lacks admin role:**
+
+```json
+{
+  "msj": "No tienes permisos para esta función",
+  "status": false
+}
+```

@@ -1,0 +1,322 @@
+---
+title: "List All Products by Category or Payment Type"
+sidebarTitle: "List Products"
+description: "Browse all marketplace products filtered by category (uniform vs. typography) or payment type (paid vs. free) with built-in pagination. Requires a valid token-access JWT."
+---
+
+TuKit provides two bulk-listing endpoints for browsing the full product catalogue. The first, `get-all-products-uni-typo`, partitions the catalogue by **category** — pass a positive numeric value in `:typeCategory` to receive uniforms, or zero/negative to receive typography products. The second, `get-all-products-payment-free`, partitions by **payment type** — positive returns paid products and zero/negative returns free products. Both endpoints support optional pagination through path parameters handled by the `Paginate` middleware, sort results by newest first (`_id: -1`), and return the same response shape including a `pagination` metadata object.
+
+**POST** `/api/product/get-all-products-uni-typo/:typeCategory/:pag?/:perpage?`
+
+**POST** `/api/product/get-all-products-payment-free/:paymentAndFree/:pag?/:perpage?`
+
+---
+
+## Authentication
+
+<Warning>
+  Both endpoints require a valid JWT in the `token-access` header. Standard
+  user authentication is sufficient — admin privileges are not required.
+</Warning>
+
+| Header         | Value              | Required |
+| -------------- | ------------------ | -------- |
+| `token-access` | `<your JWT token>` | ✅ Yes   |
+
+---
+
+## Endpoint 1 — List by Category
+
+**POST** `/api/product/get-all-products-uni-typo/:typeCategory/:pag?/:perpage?`
+
+### Path Parameters
+
+<ParamField path="typeCategory" type="number" required>
+  Numeric flag that selects the product category to return.
+
+  - **`> 0`** — Returns products where `category = "Uniforme"`.
+  - **`≤ 0`** (zero or negative) — Returns products where `category = "Tipografía"`.
+</ParamField>
+
+<ParamField path="pag" type="number">
+  Page number to retrieve. Processed by the `Paginate` middleware. Optional —
+  defaults to page `1` when omitted.
+</ParamField>
+
+<ParamField path="perpage" type="number">
+  Results per page. Processed by the `Paginate` middleware. Optional — the
+  middleware supplies a default when omitted.
+</ParamField>
+
+---
+
+## Endpoint 2 — List by Payment Type
+
+**POST** `/api/product/get-all-products-payment-free/:paymentAndFree/:pag?/:perpage?`
+
+### Path Parameters
+
+<ParamField path="paymentAndFree" type="number" required>
+  Numeric flag that selects the product payment type to return.
+
+  - **`> 0`** — Returns products where `typeProduct = "Pago"`.
+  - **`≤ 0`** (zero or negative) — Returns products where `typeProduct = "Gratuito"`.
+</ParamField>
+
+<ParamField path="pag" type="number">
+  Page number to retrieve. Optional — defaults to page `1` when omitted.
+</ParamField>
+
+<ParamField path="perpage" type="number">
+  Results per page. Optional — the middleware supplies a default when omitted.
+</ParamField>
+
+---
+
+## Request Body
+
+Neither endpoint requires a request body. Both rely entirely on path parameters.
+
+---
+
+## Response
+
+Both endpoints share an identical response shape.
+
+### 200 — Products Loaded
+
+<ResponseField name="msj" type="string">
+  `"Cargando productos..."`
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  `true` on success.
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of product documents matching the applied filter, sorted by newest
+  first. May be empty if no products exist for the selected category or
+  payment type.
+
+  <Expandable title="Product item fields">
+    <ResponseField name="_id" type="string">MongoDB ObjectId.</ResponseField>
+    <ResponseField name="title" type="string">Product title.</ResponseField>
+    <ResponseField name="description" type="string">Product description.</ResponseField>
+    <ResponseField name="category" type="string">`"Uniforme"` or `"Tipografía"`.</ResponseField>
+    <ResponseField name="price" type="number">Base price.</ResponseField>
+    <ResponseField name="format" type="string">Design file format.</ResponseField>
+    <ResponseField name="typeProduct" type="string">`"Pago"` or `"Gratuito"`.</ResponseField>
+    <ResponseField name="archivoUrl" type="array">Design file path entries.</ResponseField>
+    <ResponseField name="imageUrl" type="array">Preview image path entries.</ResponseField>
+    <ResponseField name="shirtGif" type="array">Shirt GIF path entries.</ResponseField>
+    <ResponseField name="shortsGif" type="array">Shorts GIF path entries.</ResponseField>
+    <ResponseField name="discount" type="string">Discount label or percentage string.</ResponseField>
+    <ResponseField name="discountPrice" type="string">Calculated discounted price string.</ResponseField>
+    <ResponseField name="minCant" type="number">Minimum purchase quantity.</ResponseField>
+    <ResponseField name="date" type="string">ISO 8601 creation date.</ResponseField>
+    <ResponseField name="user" type="object">Creator snapshot `{ _id, userName, email, roles, activate }`.</ResponseField>
+    <ResponseField name="createdAt" type="string">Mongoose timestamp.</ResponseField>
+    <ResponseField name="updatedAt" type="string">Mongoose timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="pagination" type="object">
+  Pagination metadata for the current result set.
+
+  <Expandable title="Pagination fields">
+    <ResponseField name="pag" type="string | number">
+      The current page number as passed in the path parameter.
+    </ResponseField>
+    <ResponseField name="perpage" type="number">
+      The limit value used for this page (sourced from the `Paginate`
+      middleware).
+    </ResponseField>
+    <ResponseField name="pags" type="number">
+      Total number of pages calculated as
+      `Math.ceil(totalDocuments / perpage)`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Error Responses
+
+| Status | Condition               |
+| ------ | ----------------------- |
+| `500`  | Unexpected server error |
+
+---
+
+## Examples
+
+<Tabs>
+  <Tab title="List uniforms (page 1)">
+    Fetch page 1 of all uniform products, 12 per page.
+
+    ```bash cURL
+    curl -X POST \
+      "https://your-api-domain.com/api/product/get-all-products-uni-typo/1/1/12" \
+      -H "token-access: <YOUR_TOKEN>"
+    ```
+
+    ```json Success Response
+    {
+      "msj": "Cargando productos...",
+      "status": true,
+      "data": [
+        {
+          "_id": "665a1f2e8c4b2a001e3d9f01",
+          "title": "Club Deportivo Tigres 2025",
+          "description": "Kit completo de uniforme para temporada 2025.",
+          "category": "Uniforme",
+          "price": 12.99,
+          "format": "AI",
+          "typeProduct": "Pago",
+          "archivoUrl": ["storage/product/23design.ai"],
+          "imageUrl": ["storage/product/7preview.png"],
+          "shirtGif": ["storage/product/12shirt.gif"],
+          "shortsGif": ["storage/product/45shorts.gif"],
+          "discount": "Sin descuento",
+          "discountPrice": "",
+          "minCant": 1,
+          "date": "2025-06-01T14:30:00.000Z",
+          "user": {
+            "_id": "664f0a1c3b2e1a001d2c8e00",
+            "userName": "adminuser",
+            "email": "admin@tukit.com",
+            "roles": [{ "name": "admin", "value": "2" }],
+            "activate": [{ "name": "active", "value": "true" }]
+          },
+          "createdAt": "2025-06-01T14:30:00.000Z",
+          "updatedAt": "2025-06-01T14:30:00.000Z"
+        }
+      ],
+      "pagination": {
+        "pag": "1",
+        "perpage": 12,
+        "pags": 4
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="List typography (page 2)">
+    Fetch page 2 of all typography products, 10 per page. Pass `0` (or any
+    non-positive value) as `typeCategory`.
+
+    ```bash cURL
+    curl -X POST \
+      "https://your-api-domain.com/api/product/get-all-products-uni-typo/0/2/10" \
+      -H "token-access: <YOUR_TOKEN>"
+    ```
+
+    ```json Success Response
+    {
+      "msj": "Cargando productos...",
+      "status": true,
+      "data": [
+        {
+          "_id": "665b2a3f9d5c3b002f4e0a02",
+          "title": "Bold Sport Typography Pack",
+          "description": "Tipografía deportiva estilo negrita.",
+          "category": "Tipografía",
+          "price": 0,
+          "format": "TTF",
+          "typeProduct": "Gratuito",
+          "archivoUrl": ["storage/product/9font.ttf"],
+          "imageUrl": ["storage/product/4preview.png"],
+          "shirtGif": [],
+          "shortsGif": [],
+          "discount": "Sin descuento",
+          "discountPrice": "",
+          "minCant": 1,
+          "date": "2025-05-20T10:00:00.000Z",
+          "user": {
+            "_id": "664f0a1c3b2e1a001d2c8e00",
+            "userName": "adminuser",
+            "email": "admin@tukit.com",
+            "roles": [{ "name": "admin", "value": "2" }],
+            "activate": [{ "name": "active", "value": "true" }]
+          },
+          "createdAt": "2025-05-20T10:00:00.000Z",
+          "updatedAt": "2025-05-20T10:00:00.000Z"
+        }
+      ],
+      "pagination": {
+        "pag": "2",
+        "perpage": 10,
+        "pags": 3
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="List paid products">
+    Fetch page 1 of all paid products (`paymentAndFree = 1`).
+
+    ```bash cURL
+    curl -X POST \
+      "https://your-api-domain.com/api/product/get-all-products-payment-free/1/1/10" \
+      -H "token-access: <YOUR_TOKEN>"
+    ```
+
+    ```json Success Response
+    {
+      "msj": "Cargando productos...",
+      "status": true,
+      "data": [
+        {
+          "_id": "665a1f2e8c4b2a001e3d9f01",
+          "title": "Club Deportivo Tigres 2025",
+          "category": "Uniforme",
+          "price": 12.99,
+          "typeProduct": "Pago",
+          "discount": "Sin descuento",
+          "discountPrice": "",
+          "minCant": 1
+        }
+      ],
+      "pagination": {
+        "pag": "1",
+        "perpage": 10,
+        "pags": 2
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="List free products">
+    Fetch page 1 of all free products (`paymentAndFree = 0`).
+
+    ```bash cURL
+    curl -X POST \
+      "https://your-api-domain.com/api/product/get-all-products-payment-free/0/1/10" \
+      -H "token-access: <YOUR_TOKEN>"
+    ```
+
+    ```json Success Response
+    {
+      "msj": "Cargando productos...",
+      "status": true,
+      "data": [
+        {
+          "_id": "665b2a3f9d5c3b002f4e0a02",
+          "title": "Bold Sport Typography Pack",
+          "category": "Tipografía",
+          "price": 0,
+          "typeProduct": "Gratuito",
+          "discount": "Sin descuento",
+          "discountPrice": "",
+          "minCant": 1
+        }
+      ],
+      "pagination": {
+        "pag": "1",
+        "perpage": 10,
+        "pags": 1
+      }
+    }
+    ```
+  </Tab>
+</Tabs>

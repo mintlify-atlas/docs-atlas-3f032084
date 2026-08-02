@@ -1,0 +1,115 @@
+{
+  "projectType": "api-service",
+  "projectName": "TuKit API",
+  "projectDescription": "A Node.js/Express REST API backend for a sporting designs marketplace that handles user authentication, product management, and shopping cart operations.",
+  "theme": "luma",
+  "primaryColor": "#fb6c24",
+  "lightColor": "#fba224",
+  "darkColor": "#ffffff",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "configuration"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "auth/overview",
+              "auth/jwt",
+              "auth/google-oauth"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/rate-limiting",
+              "guides/file-uploads",
+              "guides/pagination"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Users",
+            "pages": [
+              "api/users/register",
+              "api/users/verify-account",
+              "api/users/login",
+              "api/users/update",
+              "api/users/roles",
+              "api/users/delete",
+              "api/users/list"
+            ]
+          },
+          {
+            "group": "Products",
+            "pages": [
+              "api/products/create",
+              "api/products/update",
+              "api/products/delete",
+              "api/products/get",
+              "api/products/search",
+              "api/products/list"
+            ]
+          },
+          {
+            "group": "Shopping Cart",
+            "pages": [
+              "api/shopping-cart/create",
+              "api/shopping-cart/upload-proof",
+              "api/shopping-cart/confirm-payment",
+              "api/shopping-cart/list"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "JWT-based authentication with email verification and password recovery",
+    "Google OAuth 2.0 login via Passport.js",
+    "Product CRUD with multi-file uploads (images and GIFs) to Google Cloud Storage",
+    "Shopping cart with payment proof image upload and admin payment confirmation",
+    "Pagination middleware for all list endpoints",
+    "Rate limiting and IP/device blocking to prevent brute-force attacks",
+    "Role-based access control (user vs admin level 2)",
+    "MongoDB/Mongoose data layer with four collections: User, Product, ShoppingCart, BlockedIp"
+  ],
+  "publicApiSurface": [
+    "POST /api/user/register",
+    "POST /api/user/verify-account",
+    "POST /api/user/login",
+    "POST /api/user/recovery-password",
+    "POST /api/user/update-password/:email",
+    "POST /api/user/update-user/:userId",
+    "POST /api/user/update-role/:userId/:adminId",
+    "POST /api/user/delete/:userId/account",
+    "POST /api/user/list/:adminId/user/:pag?/:perpage?",
+    "POST /api/product/agregate",
+    "POST /api/product/update/:productId",
+    "POST /api/product/get/:productId/productId",
+    "POST /api/product/remove/:productId",
+    "POST /api/product/search-uniform/:query/:pag?/:perpage?",
+    "POST /api/product/search-typography/:query/:pag?/:perpage?",
+    "POST /api/product/get-all-products-uni-typo/:typeCategory/:pag?/:perpage?",
+    "POST /api/product/get-all-products-payment-free/:paymentAndFree/:pag?/:perpage?",
+    "POST /api/shopping-cart/:productId",
+    "POST /api/shopping-cart/load/:shoppingCartId/voucher",
+    "POST /api/shopping-cart/update-payment/:shoppingCartId/confirmed",
+    "POST /api/shopping-cart/list-my-buy/:pag?/:perpage?",
+    "POST /api/shopping-cart/list-my-shopping/:pag?/:perpage?",
+    "GET /auth/google",
+    "GET /auth/google/callback"
+  ]
+}

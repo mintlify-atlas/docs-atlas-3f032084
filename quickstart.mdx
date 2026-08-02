@@ -1,47 +1,135 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with TuKit in 5 Minutes"
+sidebarTitle: "Quickstart"
+description: "Install TuKit, configure environment variables, connect MongoDB, and make your first API call in under 5 minutes."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+This guide walks you through everything needed to run TuKit locally and reach a live API endpoint. By the end you'll have the server running against your own MongoDB instance, a registered and verified user account, and a valid JWT ready to authenticate subsequent requests.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Prerequisites">
+    Make sure the following are available on your machine before you begin:
 
-    ```bash
-    npm install your-package
-    ```
+    - **Node.js 18 or later** — TuKit uses `performance.now()` at startup and ES module syntax transpiled by Babel, both of which work reliably on Node 18+.
+    - **npm** — bundled with Node.js; used to install dependencies and run scripts.
+    - **MongoDB** — either a local `mongod` instance or a free [MongoDB Atlas](https://www.mongodb.com/atlas) cluster. You will need the full connection URI.
+    - **Google account credentials** — a Gmail address with an App Password for Nodemailer, a Google Cloud Storage bucket name, and a Google OAuth 2.0 client ID and secret from Google Cloud Console (required even for local development if you want OAuth to work).
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Clone the Repository and Install Dependencies">
+    Clone the project from GitLab, move into the directory, and install all Node.js dependencies:
 
     ```bash
-    your-cli init
+    git clone https://gitlab.com/rizofredy5/Ecommerce.git
+    cd Ecommerce
+    npm install
     ```
+
+    `npm install` pulls in both `dependencies` and `devDependencies` defined in `package.json`, including Express, Mongoose, Passport, Nodemailer, Sharp, and the Babel toolchain used by the `dev` script.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Create Your .env File">
+    TuKit reads all runtime configuration from environment variables via `dotenv`. Create a file named `.env` in the **project root** (the same directory as `package.json`, not inside `src/`):
 
     ```bash
-    your-cli start
+    # .env — project root
+    PORT=3000
+    SECRET=your-strong-jwt-secret-here
+
+    MONGODB_URL=mongodb+srv://user:pass@cluster.mongodb.net/dbname
+
+    USER_EMAIL=your-gmail-address@gmail.com
+    PASS_EMAIL=your-google-app-password
+
+    NAMEGOOGLECLOUD=your-gcs-bucket-name
+    CLIENT_ID=your-google-oauth-client-id
+    CLIENT_SECRET=your-google-oauth-client-secret
+    CLIENT_URL=http://localhost:3000
+    ```
+
+    See the [Configuration](/configuration) page for a full description of every variable.
+  </Step>
+
+  <Step title="Start the Development Server">
+    Run the development server using Nodemon and Babel:
+
+    ```bash
+    npm run dev
+    ```
+
+    Nodemon watches for file changes and restarts automatically. On a successful startup you'll see output similar to:
+
+    ```
+    server-startup: 142.500ms
+    Server on port 3000
+    ```
+
+    The server is now listening at `http://localhost:3000` and the MongoDB connection is initialised immediately after the port binding.
+  </Step>
+
+  <Step title="Register Your First User">
+    Send a `POST` request to `/api/user/register` with your chosen credentials. The API accepts JSON:
+
+    ```bash
+    curl -X POST http://localhost:3000/api/user/register \
+      -H "Content-Type: application/json" \
+      -d '{
+        "userName": "jane_doe",
+        "email": "jane@example.com",
+        "password": "SuperSecret123"
+      }'
+    ```
+
+    On success the API creates the user record in MongoDB and sends a verification code to the provided email address via Nodemailer.
+  </Step>
+
+  <Step title="Verify Your Account">
+    Check your inbox for the verification code sent by Nodemailer, then confirm the account:
+
+    ```bash
+    curl -X POST http://localhost:3000/api/user/verify-account \
+      -H "Content-Type: application/json" \
+      -d '{
+        "email": "jane@example.com",
+        "code": "12345"
+      }'
+    ```
+
+    Replace `"12345"` with the actual code from the email. A successful response activates the account so it can log in.
+  </Step>
+
+  <Step title="Log In and Retrieve Your JWT">
+    With the account verified, authenticate to receive your JWT:
+
+    ```bash
+    curl -X POST http://localhost:3000/api/user/login \
+      -H "Content-Type: application/json" \
+      -d '{
+        "email": "jane@example.com",
+        "password": "SuperSecret123"
+      }'
+    ```
+
+    The response includes a `token` field — a signed JWT you'll use on every protected route:
+
+    ```json
+    {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "status": true
+    }
     ```
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+<Note>
+  Every protected route in TuKit validates the JWT through the `Token` middleware, which reads the header named **`token-access`**. Pass your JWT as that header on all subsequent requests:
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+  ```bash
+  curl -X POST http://localhost:3000/api/user/update-user/<userId> \
+    -H "Content-Type: application/json" \
+    -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+    -d '{ "userName": "jane_updated" }'
+  ```
+
+  Requests to protected routes that are missing the `token-access` header will receive a `403 Forbidden` response. An invalid or expired token returns `401 Unauthorized`.
+</Note>

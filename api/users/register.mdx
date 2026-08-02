@@ -1,0 +1,122 @@
+---
+title: "Register a New User Account — TuKit API"
+sidebarTitle: "Register"
+description: "Create a new user account on the TuKit marketplace. Sends a 5-digit email verification code that must be confirmed before the account is active."
+---
+
+Registering a new account creates a user record with a default role of `Usuario` (value `"1"`) and an inactive activation status. After the record is saved, the API automatically generates a random 5-digit verification code, stores it on the user document, and dispatches it to the provided email address. The account cannot be used to log in until that code is confirmed via the [Verify Account](/api/users/verify-account) endpoint.
+
+**POST** `/api/user/register`
+
+## Authentication
+
+No authentication required.
+
+## Request Body
+
+<ParamField body="userName" type="string" required>
+  The display name for the new user. Stored as-is (not normalized to lowercase).
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  The user's email address. Stored in lowercase. Must be unique across all accounts — if an account already exists with this address the request is rejected with a `202` response.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Plain-text password. Hashed with bcrypt (cost factor 10) before storage. Never returned in any response.
+</ParamField>
+
+## Response
+
+### 200 — Success
+
+<ResponseField name="msj" type="string">
+  A human-readable confirmation message in Spanish confirming the account was created and that a verification code has been sent.
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  Always `true` on success.
+</ResponseField>
+
+<ResponseField name="savedUser" type="object">
+  The newly created user document as returned by Mongoose.
+
+  <Expandable title="savedUser fields">
+    <ResponseField name="_id" type="string">
+      MongoDB ObjectId for the user.
+    </ResponseField>
+    <ResponseField name="userName" type="string">
+      The display name provided during registration.
+    </ResponseField>
+    <ResponseField name="email" type="string">
+      Lowercased email address.
+    </ResponseField>
+    <ResponseField name="roles" type="array">
+      Default role assigned at registration: `[{ name: "Usuario", value: "1" }]`.
+    </ResponseField>
+    <ResponseField name="activate" type="array">
+      Default activation status at registration: `[{ name: "Inactivo", value: "2" }]`.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 timestamp of account creation.
+    </ResponseField>
+    <ResponseField name="updatedAt" type="string">
+      ISO 8601 timestamp of last update.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+  The `login_code` field will be present on the returned `savedUser` object. Do **not** expose or store this value client-side — it is only used internally by the verification flow.
+</Note>
+
+## Error Responses
+
+| Status | Cause |
+|--------|-------|
+| `202`  | A required field (`userName`, `email`, or `password`) is missing from the request body. |
+| `202`  | An account with the provided email address already exists. |
+| `500`  | Unexpected server or database error. |
+
+<Warning>
+  A `202` status does **not** indicate success in this API. Always check the `status` field in the response body — if it is `false` the operation did not complete.
+</Warning>
+
+## Example
+
+```bash
+curl -X POST https://your-tukit-api.com/api/user/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userName": "MarcosDesigns",
+    "email": "marcos@example.com",
+    "password": "SuperSecret123"
+  }'
+```
+
+**Success response:**
+
+```json
+{
+  "msj": "Cuenta creada exitosamente. Te hemos enviado un código de 5 dígitos a tu correo para que verifiques tu cuenta, por favor no lo compartas",
+  "status": true,
+  "savedUser": {
+    "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+    "userName": "MarcosDesigns",
+    "email": "marcos@example.com",
+    "roles": [{ "name": "Usuario", "value": "1" }],
+    "activate": [{ "name": "Inactivo", "value": "2" }],
+    "createdAt": "2024-06-01T12:00:00.000Z",
+    "updatedAt": "2024-06-01T12:00:00.000Z"
+  }
+}
+```
+
+**Error — email already registered:**
+
+```json
+{
+  "msj": "Correo registrado. Por favor intenta con uno diferente",
+  "status": false
+}
+```

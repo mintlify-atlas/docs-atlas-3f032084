@@ -1,0 +1,73 @@
+---
+title: "Delete a TuKit User Account — TuKit API"
+sidebarTitle: "Delete Account"
+description: "Permanently delete a user account from TuKit. Requires a valid JWT. Users can only delete their own account."
+---
+
+This endpoint permanently removes a user account from the database using Mongoose's `findByIdAndDelete`. The operation is irreversible — once the document is deleted there is no recovery path. As a safeguard, the controller checks that the `userId` path parameter matches the `_id` of the document that was found and deleted; a mismatch is returned as a `203` error. Because the check happens after deletion has already occurred, the primary defense against unauthorized deletion is the `token-access` header middleware applied at the route level, which must be a valid JWT before the controller is ever reached.
+
+**POST** `/api/user/delete/:userId/account`
+
+## Authentication
+
+<ParamField header="token-access" type="string" required>
+  A valid JWT obtained from the [Login](/api/users/login) endpoint. The middleware validates this token before the controller logic runs.
+</ParamField>
+
+## Path Parameters
+
+<ParamField path="userId" type="string" required>
+  The MongoDB ObjectId of the account to delete. Must match the `_id` of the document located by the database lookup.
+</ParamField>
+
+## Request Body
+
+No request body is required for this endpoint.
+
+## Response
+
+### 200 — Success
+
+<ResponseField name="msj" type="string">
+  Confirmation that the account was deleted: `"Cuenta eliminada correctamente"`.
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  Always `true` on success.
+</ResponseField>
+
+## Error Responses
+
+| Status | Cause |
+|--------|-------|
+| `203`  | The `userId` in the URL did not match the `_id` of the deleted document. |
+| `500`  | Unexpected server or database error, including an invalid or non-existent `userId`. |
+
+<Warning>
+  Account deletion is **permanent**. All user data stored in the document — including credentials, roles, and verification codes — is immediately and irrecoverably removed from the database.
+</Warning>
+
+## Example
+
+```bash
+curl -X POST https://your-tukit-api.com/api/user/delete/64f1a2b3c4d5e6f7a8b9c0d1/account \
+  -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+**Success response:**
+
+```json
+{
+  "msj": "Cuenta eliminada correctamente",
+  "status": true
+}
+```
+
+**Error — userId mismatch:**
+
+```json
+{
+  "msj": "No tienes permisos para esta función",
+  "status": false
+}
+```

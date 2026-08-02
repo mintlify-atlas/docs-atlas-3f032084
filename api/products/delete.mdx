@@ -1,0 +1,116 @@
+---
+title: "Delete a Product from the TuKit Marketplace"
+sidebarTitle: "Delete Product"
+description: "Permanently remove a product from the marketplace by its ID. Requires admin level 2 authentication. This action cannot be undone."
+---
+
+The Delete Product endpoint permanently removes a product document from the database. The server first confirms the product exists — returning a `404` if it does not — then verifies that the requesting user holds the admin level 2 role before executing the deletion. Because the operation calls MongoDB's `deleteOne`, it is irreversible; there is no soft-delete or recycle-bin mechanism. No request body is required — the product is identified entirely by the `productId` path parameter.
+
+**POST** `/api/product/remove/:productId`
+
+---
+
+## Authentication
+
+<Warning>
+  Every request must include a valid JWT in the `token-access` header. The
+  authenticated user must also hold the **admin level 2** role
+  (`name: "admin"`, `value: "2"`). Requests from non-admin users receive
+  HTTP `203`. Deleting a product is **permanent and cannot be undone**.
+</Warning>
+
+| Header         | Value              | Required |
+| -------------- | ------------------ | -------- |
+| `token-access` | `<your JWT token>` | ✅ Yes   |
+
+---
+
+## Path Parameters
+
+<ParamField path="productId" type="string" required>
+  The MongoDB ObjectId of the product to delete. Returned as `_id` when the
+  product was created or retrieved.
+</ParamField>
+
+---
+
+## Request Body
+
+No request body is required or expected for this endpoint.
+
+---
+
+## Response
+
+### 200 — Product Deleted
+
+<ResponseField name="msj" type="string">
+  `"Producto eliminado correctamente"`
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  `false` — note that the server intentionally returns `false` here to
+  signal that the product no longer exists.
+</ResponseField>
+
+<ResponseField name="removeProduct" type="object">
+  The raw result object returned by MongoDB's `deleteOne` operation.
+
+  <Expandable title="removeProduct fields">
+    <ResponseField name="acknowledged" type="boolean">
+      `true` if the write was acknowledged by the database.
+    </ResponseField>
+    <ResponseField name="deletedCount" type="number">
+      Number of documents deleted. Will be `1` on success.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Error Responses
+
+| Status | Condition                               | `status` |
+| ------ | --------------------------------------- | -------- |
+| `404`  | No product found with the given ID      | `false`  |
+| `203`  | Authenticated user is not admin level 2 | `false`  |
+| `500`  | Unexpected server error                 | —        |
+
+```json 404 — Product Not Found
+{
+  "msj": "Producto no encontrado",
+  "status": false
+}
+```
+
+```json 203 — Not Authorized
+{
+  "msj": "No estás autorizado para agregar productos",
+  "status": false
+}
+```
+
+---
+
+## Example
+
+<Note>
+  Replace `<YOUR_TOKEN>` with a valid JWT for an admin level 2 user and
+  `<PRODUCT_ID>` with the `_id` of the product you want to remove.
+</Note>
+
+```bash cURL
+curl -X POST https://your-api-domain.com/api/product/remove/665a1f2e8c4b2a001e3d9f01 \
+  -H "token-access: <YOUR_TOKEN>"
+```
+
+```json Success Response
+{
+  "msj": "Producto eliminado correctamente",
+  "status": false,
+  "removeProduct": {
+    "acknowledged": true,
+    "deletedCount": 1
+  }
+}
+```

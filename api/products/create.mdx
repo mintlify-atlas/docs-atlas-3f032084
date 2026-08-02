@@ -1,0 +1,248 @@
+---
+title: "Create a New Product in the TuKit Marketplace"
+sidebarTitle: "Create Product"
+description: "Add a new sporting design product (uniform or typography) to the marketplace. Requires an admin level 2 token and accepts multipart/form-data with optional file uploads."
+---
+
+The Create Product endpoint allows an authenticated admin to publish a new sporting design to the TuKit marketplace. Requests must be sent as `multipart/form-data` because the endpoint uses [Multer](https://github.com/expressjs/multer) to handle up to four file fields alongside the text body. Only users whose role has `name: "admin"` and `value: "2"` are permitted to call this endpoint; all other authenticated users receive a `203` rejection. File fields that are omitted are stored as empty arrays on the product document, so they are all optional at the HTTP level even though meaningful products will generally include at least an image.
+
+**POST** `/api/product/agregate`
+
+---
+
+## Authentication
+
+<Warning>
+  Every request must include a valid JWT in the `token-access` header. The
+  authenticated user must also hold the **admin level 2** role
+  (`name: "admin"`, `value: "2"`). Requests from non-admin users return
+  HTTP `203`.
+</Warning>
+
+| Header        | Value              | Required |
+| ------------- | ------------------ | -------- |
+| `token-access` | `<your JWT token>` | ✅ Yes   |
+
+---
+
+## Request Body
+
+This endpoint accepts `multipart/form-data`. Send text fields and file fields in the same form submission.
+
+### Text Fields
+
+<ParamField body="title" type="string" required>
+  Display name of the product shown to buyers on the marketplace.
+</ParamField>
+
+<ParamField body="category" type="string" required>
+  Product category. Must be exactly one of the enum values accepted by the
+  database schema.
+
+  Allowed values: `"Uniforme"` | `"Tipografía"`
+</ParamField>
+
+<ParamField body="price" type="number" required>
+  Base price of the product in the store's local currency. Stored as a
+  `Number` and defaults to `0` if omitted at the model level.
+</ParamField>
+
+<ParamField body="format" type="string" required>
+  Design file format(s) included with the product, e.g. `"AI"`, `"PNG"`,
+  `"PSD"`. Free-form string — use a descriptive value buyers can understand.
+</ParamField>
+
+<ParamField body="typeProduct" type="string" required>
+  Determines whether the product is paid or free.
+
+  Allowed values: `"Pago"` | `"Gratuito"`
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional long-form description of the product. Displayed on the product
+  detail page.
+</ParamField>
+
+### File Fields
+
+All file fields are optional. Each field accepts a maximum of **1 file** and is stored to `storage/product/` on the server via Multer disk storage.
+
+<ParamField body="archivoUrl" type="file">
+  The primary design file (e.g. `.ai`, `.psd`, `.zip`). Max 1 file.
+</ParamField>
+
+<ParamField body="imageUrl" type="file">
+  Preview image for the product listing. Max 1 file.
+</ParamField>
+
+<ParamField body="shirtGif" type="file">
+  Animated GIF or image demonstrating the design on a shirt. Max 1 file.
+</ParamField>
+
+<ParamField body="shortsGif" type="file">
+  Animated GIF or image demonstrating the design on shorts. Max 1 file.
+</ParamField>
+
+---
+
+## Response
+
+### 200 — Product Created
+
+<ResponseField name="msj" type="string">
+  Human-readable confirmation message, e.g. `"Uniforme creada correctamente"`.
+  The category name is interpolated into the message.
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  Always `true` on success.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  The newly created product document.
+
+  <Expandable title="Product fields">
+    <ResponseField name="_id" type="string">
+      MongoDB ObjectId of the product.
+    </ResponseField>
+    <ResponseField name="title" type="string">
+      Product title.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Product description.
+    </ResponseField>
+    <ResponseField name="category" type="string">
+      `"Uniforme"` or `"Tipografía"`.
+    </ResponseField>
+    <ResponseField name="price" type="number">
+      Base price.
+    </ResponseField>
+    <ResponseField name="format" type="string">
+      Design file format string.
+    </ResponseField>
+    <ResponseField name="typeProduct" type="string">
+      `"Pago"` or `"Gratuito"`.
+    </ResponseField>
+    <ResponseField name="archivoUrl" type="array">
+      Array of stored file path entries for the design file.
+    </ResponseField>
+    <ResponseField name="imageUrl" type="array">
+      Array of stored file path entries for the preview image.
+    </ResponseField>
+    <ResponseField name="shirtGif" type="array">
+      Array of stored file path entries for the shirt GIF.
+    </ResponseField>
+    <ResponseField name="shortsGif" type="array">
+      Array of stored file path entries for the shorts GIF.
+    </ResponseField>
+    <ResponseField name="discount" type="string">
+      Discount label. Defaults to `"Sin descuento"`.
+    </ResponseField>
+    <ResponseField name="discountPrice" type="string">
+      Calculated discounted price. Defaults to `""`.
+    </ResponseField>
+    <ResponseField name="minCant" type="number">
+      Minimum purchase quantity. Defaults to `1`.
+    </ResponseField>
+    <ResponseField name="date" type="string">
+      ISO 8601 timestamp set at creation.
+    </ResponseField>
+    <ResponseField name="user" type="object">
+      Snapshot of the admin user who created the product.
+      <Expandable title="user fields">
+        <ResponseField name="_id" type="string">User ID.</ResponseField>
+        <ResponseField name="userName" type="string">Username.</ResponseField>
+        <ResponseField name="email" type="string">Email address.</ResponseField>
+        <ResponseField name="roles" type="array">Array of role objects `{ name, value }`.</ResponseField>
+        <ResponseField name="activate" type="array">Array of activation status objects.</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      Mongoose `timestamps` field — ISO 8601 creation time.
+    </ResponseField>
+    <ResponseField name="updatedAt" type="string">
+      Mongoose `timestamps` field — ISO 8601 last update time.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Error Responses
+
+| Status | Condition                                          | `status` |
+| ------ | -------------------------------------------------- | -------- |
+| `203`  | Authenticated user is not admin level 2            | `false`  |
+| `203`  | One or more required text fields are missing       | `false`  |
+| `500`  | Unexpected server error                            | —        |
+
+```json 203 — Not Authorized
+{
+  "msj": "No estás autorizado para agregar productos",
+  "status": false
+}
+```
+
+```json 203 — Missing Fields
+{
+  "msj": "Completa todos los campos",
+  "status": false
+}
+```
+
+---
+
+## Example
+
+<Note>
+  Replace `<YOUR_TOKEN>` with a valid JWT that belongs to an admin level 2
+  user. Adjust file paths to point to real files on your machine.
+</Note>
+
+```bash cURL
+curl -X POST https://your-api-domain.com/api/product/agregate \
+  -H "token-access: <YOUR_TOKEN>" \
+  -F "title=Club Deportivo Tigres 2025" \
+  -F "category=Uniforme" \
+  -F "price=12.99" \
+  -F "format=AI" \
+  -F "typeProduct=Pago" \
+  -F "description=Kit completo de uniforme para temporada 2025." \
+  -F "archivoUrl=@/path/to/design.ai" \
+  -F "imageUrl=@/path/to/preview.png" \
+  -F "shirtGif=@/path/to/shirt.gif" \
+  -F "shortsGif=@/path/to/shorts.gif"
+```
+
+```json Success Response
+{
+  "msj": "Uniforme creada correctamente",
+  "status": true,
+  "data": {
+    "_id": "665a1f2e8c4b2a001e3d9f01",
+    "title": "Club Deportivo Tigres 2025",
+    "description": "Kit completo de uniforme para temporada 2025.",
+    "category": "Uniforme",
+    "price": 12.99,
+    "format": "AI",
+    "typeProduct": "Pago",
+    "archivoUrl": ["storage/product/23design.ai"],
+    "imageUrl": ["storage/product/7preview.png"],
+    "shirtGif": ["storage/product/12shirt.gif"],
+    "shortsGif": ["storage/product/45shorts.gif"],
+    "discount": "Sin descuento",
+    "discountPrice": "",
+    "minCant": 1,
+    "date": "2025-06-01T14:30:00.000Z",
+    "user": {
+      "_id": "664f0a1c3b2e1a001d2c8e00",
+      "userName": "adminuser",
+      "email": "admin@tukit.com",
+      "roles": [{ "name": "admin", "value": "2" }],
+      "activate": [{ "name": "active", "value": "true" }]
+    },
+    "createdAt": "2025-06-01T14:30:00.000Z",
+    "updatedAt": "2025-06-01T14:30:00.000Z"
+  }
+}
+```

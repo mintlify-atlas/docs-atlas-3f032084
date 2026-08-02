@@ -1,0 +1,161 @@
+---
+title: "Confirm or Pend a Cart Payment — TuKit API"
+sidebarTitle: "Confirm Payment"
+description: "Allows the product seller to validate or mark as pending the payment on a shopping cart order, after the buyer has uploaded proof of payment."
+---
+
+Once a buyer has uploaded their payment proof via [Upload Proof](/api/shopping-cart/upload-proof), the seller who owns one of the products in the cart can call this endpoint to update the `confirmed_payment` status. The controller first validates that `shoppingCartId` is a well-formed MongoDB ObjectId, then verifies the cart exists, and finally checks that the authenticated user's `_id` matches the `user._id` of at least one product in the cart's `products` array — confirming they are the seller. When the payment is fully confirmed (`key: 1, name: "Pago"`), the server also decrements `minCant` on the corresponding `Product` document to reflect stock consumed.
+
+## Method and path
+
+```
+POST /api/shopping-cart/update-payment/:shoppingCartId/confirmed
+```
+
+## Authentication
+
+A valid JWT must be passed in the `token-access` request header. The authenticated user must be the **seller** — their `_id` must appear as `products[n].user._id` inside the specified cart. The buyer cannot call this endpoint to self-approve their own payment.
+
+| Header | Required | Description |
+|---|---|---|
+| `token-access` | ✅ Yes | JWT of the product owner (seller) |
+
+<Warning>
+  Buyers are blocked from confirming their own payments. If the authenticated user's `_id` does not match any `products[n].user._id` in the cart, the API returns `403 No tienes permisos para esta función`.
+</Warning>
+
+## Path parameters
+
+<ParamField path="shoppingCartId" type="string" required>
+  The MongoDB ObjectId of the shopping cart. The server calls `mongoose.Types.ObjectId.isValid()` on this value and returns `400` immediately if the format is invalid — before any database query is made.
+</ParamField>
+
+## Request body
+
+<ParamField body="confirmed_payment" type="object" required>
+  Payment status object that will be set on the cart document via `$set`.
+
+  <Expandable title="confirmed_payment fields">
+    <ParamField body="key" type="number" required>
+      Numeric status code. Accepted values:
+      - `1` — Payment confirmed (`"Pago"`)
+      - `2` — Payment pending (`"Pago pendiente"`)
+    </ParamField>
+    <ParamField body="name" type="string" required>
+      Human-readable label matching the `key`:
+      - `"Pago"` when `key` is `1`
+      - `"Pago pendiente"` when `key` is `2`
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<Note>
+  When `confirmed_payment.key === 1` and `confirmed_payment.name === "Pago"`, the server performs an additional write: it decrements `minCant` on the `Product` document by the cart's `cantBuy` value (always `1`), signalling that one licence or copy of the design has been consumed.
+</Note>
+
+## Responses
+
+### 200 — Payment status updated
+
+<ResponseField name="msj" type="string">
+  `"Compra validada correctamente"`
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  `true`
+</ResponseField>
+
+<ResponseField name="paymentConfirmed" type="object">
+  The Mongoose `updateOne` result object, containing:
+
+  <Expandable title="paymentConfirmed fields">
+    <ResponseField name="acknowledged" type="boolean">
+      `true` when MongoDB acknowledged the write.
+    </ResponseField>
+    <ResponseField name="modifiedCount" type="number">
+      Number of documents modified (`1` on success).
+    </ResponseField>
+    <ResponseField name="upsertedId" type="null">
+      `null` — no upsert is performed.
+    </ResponseField>
+    <ResponseField name="upsertedCount" type="number">
+      `0`
+    </ResponseField>
+    <ResponseField name="matchedCount" type="number">
+      `1` when the cart was found and matched.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error responses
+
+| Status | `msj` | Cause |
+|---|---|---|
+| `403` | `"Sin token"` | `token-access` header is missing |
+| `401` | `"Token inexistente"` | JWT is invalid or expired |
+| `400` | `"ID no válido"` | `shoppingCartId` is not a valid MongoDB ObjectId format |
+| `404` | `"Carrito no encontrado"` | No `ShoppingCart` document matches `shoppingCartId` |
+| `403` | `"No tienes permisos para esta función"` | Authenticated user is not a seller of any product in this cart |
+| `500` | *(error object)* | Unexpected server error |
+
+## Examples
+
+### Confirm payment
+
+```bash
+curl -X POST https://api.tukit.app/api/shopping-cart/update-payment/65a0b1c2d3e4f5a6b7c8d9e0/confirmed \
+  -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "confirmed_payment": {
+      "key": 1,
+      "name": "Pago"
+    }
+  }'
+```
+
+**Response**
+
+```json
+{
+  "msj": "Compra validada correctamente",
+  "status": true,
+  "paymentConfirmed": {
+    "acknowledged": true,
+    "modifiedCount": 1,
+    "upsertedId": null,
+    "upsertedCount": 0,
+    "matchedCount": 1
+  }
+}
+```
+
+### Mark as pending
+
+```bash
+curl -X POST https://api.tukit.app/api/shopping-cart/update-payment/65a0b1c2d3e4f5a6b7c8d9e0/confirmed \
+  -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "confirmed_payment": {
+      "key": 2,
+      "name": "Pago pendiente"
+    }
+  }'
+```
+
+**Response**
+
+```json
+{
+  "msj": "Compra validada correctamente",
+  "status": true,
+  "paymentConfirmed": {
+    "acknowledged": true,
+    "modifiedCount": 1,
+    "upsertedId": null,
+    "upsertedCount": 0,
+    "matchedCount": 1
+  }
+}
+```

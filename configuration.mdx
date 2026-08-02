@@ -1,0 +1,88 @@
+---
+title: "Configure TuKit API Environment"
+sidebarTitle: "Configuration"
+description: "Complete reference for TuKit environment variables covering server, database, email, and Google Cloud Storage configuration."
+---
+
+TuKit reads all runtime configuration from environment variables using `dotenv`. At startup, `src/config.js` calls `dotenv`'s `config()` function and exports a single object that every other module imports. To configure a local or self-hosted instance, create a `.env` file in the **project root** — the directory that contains `package.json` — before running `npm run dev`. Do not place it inside the `src/` directory; the `dotenv` loader resolves the file path relative to the working directory from which the process starts.
+
+## Environment Variables
+
+<ParamField body="PORT" type="number">
+  The HTTP port the Express server binds to. If omitted, TuKit falls back to `3000` as defined in `src/index.js`. Use `3000` for local development or `8080` for environments that expect a standard alternative HTTP port.
+</ParamField>
+
+<ParamField body="SECRET" type="string" required>
+  The secret key used by `jsonwebtoken` to sign and verify all JWTs issued by TuKit. This value is passed directly to `jwt.sign()` and `jwt.verify()` in the `Token` middleware. Use a long, randomly-generated string and treat it like a password — anyone who knows this value can forge valid tokens for any user.
+</ParamField>
+
+<ParamField body="MONGODB_URL" type="string" required>
+  The full MongoDB connection URI passed to Mongoose's `connect()` call inside `src/database/mongoData.js`. For a cloud-hosted cluster the format is:
+
+  ```
+  mongodb+srv://<username>:<password>@<cluster>.mongodb.net/<dbname>
+  ```
+
+  For a local MongoDB instance use `mongodb://127.0.0.1:27017/<dbname>`.
+</ParamField>
+
+<ParamField body="USER_EMAIL" type="string" required>
+  The Gmail address Nodemailer uses as the `from` address when sending account verification codes and password-recovery emails. This must be a valid Gmail account that has either IMAP access or an App Password configured.
+</ParamField>
+
+<ParamField body="PASS_EMAIL" type="string" required>
+  The Google App Password for the `USER_EMAIL` account. This is **not** your regular Gmail password. Generate a dedicated App Password from **Google Account → Security → 2-Step Verification → App Passwords**. Using an App Password keeps your main account credential out of your codebase and allows you to revoke it independently.
+</ParamField>
+
+<ParamField body="NAMEGOOGLECLOUD" type="string" required>
+  The name of the Google Cloud Storage bucket where TuKit uploads product design files and images. The bucket must already exist in your Google Cloud project and the service account referenced by the credentials JSON file (`src/tools/tukit.*.json`) must have the **Storage Object Admin** role on it.
+</ParamField>
+
+<ParamField body="CLIENT_ID" type="string" required>
+  The OAuth 2.0 client ID generated in **Google Cloud Console → APIs & Services → Credentials**. Passport.js reads this value when initialising the `passport-google-oauth20` strategy to identify your application to Google during the OAuth handshake at `/auth/google`.
+</ParamField>
+
+<ParamField body="CLIENT_SECRET" type="string" required>
+  The OAuth 2.0 client secret paired with `CLIENT_ID`. Like `SECRET`, keep this value private — it is used server-side only and must never be exposed to the browser or committed to version control.
+</ParamField>
+
+<ParamField body="CLIENT_URL" type="string" required>
+  The base URL of your frontend application or callback host. This value is used when constructing OAuth redirect URIs and any absolute URLs embedded in outgoing emails (e.g. verification links). For local development set this to `http://localhost:3000`. In production, set it to your deployed frontend domain such as `https://app.example.com`.
+</ParamField>
+
+## Complete .env Example
+
+```bash
+# Server
+PORT=3000
+SECRET=a7f3k9mX2pQrLv8wYnZdBcHjTsUeOi14
+
+# Database
+MONGODB_URL=mongodb+srv://jane:p%40ssw0rd@cluster0.abc12.mongodb.net/tukit
+
+# Email (Nodemailer)
+USER_EMAIL=noreply@yourdomain.com
+PASS_EMAIL=abcd efgh ijkl mnop
+
+# Google Cloud Storage
+NAMEGOOGLECLOUD=tukit-designs-bucket
+
+# Google OAuth 2.0
+CLIENT_ID=123456789-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com
+CLIENT_SECRET=GOCSPX-aBcDeFgHiJkLmNoPqRsTuVwXyZ
+CLIENT_URL=http://localhost:3000
+```
+
+<Warning>
+  Your `.env` file must be placed in the **project root** (the same directory as `package.json`), not inside the `src/` folder. The `dotenv` loader cannot find it if it is nested. Additionally, **never commit `.env` to version control** — add it to your `.gitignore` immediately. The file contains credentials that grant full access to your database, email account, cloud storage bucket, and OAuth application.
+</Warning>
+
+<Note>
+  To generate a strong, unpredictable value for `SECRET`, run the following command in your terminal:
+
+  ```bash
+  node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+  ```
+
+  This produces a 96-character hexadecimal string with 384 bits of entropy, far exceeding the minimum recommended length for HMAC-SHA256 JWT signing.
+</Note>

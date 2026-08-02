@@ -1,0 +1,214 @@
+---
+title: "JWT Authentication Flow for TuKit API"
+sidebarTitle: "JWT Auth"
+description: "Register, verify your account, and log in to receive a JWT. Pass the token in the token-access header on every protected request."
+---
+
+TuKit uses JSON Web Tokens (JWT) — signed with a configurable `SECRET` from the server's config — as the primary mechanism for authorising requests to protected endpoints. Tokens are valid for **365 days** (`expiresIn: "365d"`) and carry five claims taken directly from the User document at login time: `id`, `userName`, `email`, `roles`, and `activate`. The JWT is stored on the User record in MongoDB after each successful login, so the most recently issued token is always persisted server-side.
+
+## Registration
+
+New users register by sending a `POST` request to `/api/user/register` with a JSON body containing `userName`, `email`, and `password`. The API hashes the password with bcrypt, creates the User document, and then generates a random **5-digit numeric code** that is stored in `login_code` and dispatched to the user's email via Nodemailer (Gmail transport).
+
+```http
+POST /api/user/register
+Content-Type: application/json
+
+{
+  "userName": "JaneDesigner",
+  "email": "jane@example.com",
+  "password": "s3cur3P@ss"
+}
+```
+
+**Success response (`200`)**
+
+```json
+{
+  "msj": "Cuenta creada exitosamente. Te hemos enviado un código de 5 dígitos a tu correo para que verifiques tu cuenta, por favor no lo compartas",
+  "status": true,
+  "savedUser": { ... }
+}
+```
+
+The new account is created with the following defaults:
+
+- `roles`: `[{ "name": "Usuario", "value": "1" }]`
+- `activate`: `[{ "name": "Inactivo", "value": "2" }]`
+
+The account remains inactive and **cannot log in** until the email verification step is completed.
+
+## Account Verification
+
+Once the user has received the 5-digit code by email, they must submit it to activate their account:
+
+```http
+POST /api/user/verify-account
+Content-Type: application/json
+
+{
+  "email": "jane@example.com",
+  "code": "34215"
+}
+```
+
+The API looks up the user by `email` and compares the submitted `code` against the stored `login_code`. If they match, it:
+
+1. Copies the code into `login_code_confirmed`.
+2. Updates `activate` to `[{ "name": "Activado", "value": "1" }]`.
+
+**Success response (`200`)**
+
+```json
+{
+  "msj": "La cuenta ha sido confirmada.Inicia sesión",
+  "status": true
+}
+```
+
+**Failure response (`203`)** — wrong or missing code:
+
+```json
+{
+  "msj": "Código de verificación incorrecto. Inténtalo nuevamente",
+  "status": false
+}
+```
+
+## Login
+
+With the account active, the client can exchange credentials for a JWT:
+
+```http
+POST /api/user/login
+Content-Type: application/json
+
+{
+  "email": "jane@example.com",
+  "password": "s3cur3P@ss"
+}
+```
+
+The API validates that:
+
+- The user exists.
+- `login_code_confirmed` is set (i.e. verification was completed).
+- The `activate` array contains `{ "name": "Activado", "value": "1" }`.
+- The submitted password matches the bcrypt hash.
+
+On success, a JWT is signed with the full identity payload and the token is saved to the User document before the response is returned.
+
+**Success response (`200`)**
+
+```json
+{
+  "msj": "Bienvenido!",
+  "status": true,
+  "token": "<jwt>",
+  "user": {
+    "id": "...",
+    "userName": "JaneDesigner",
+    "email": "jane@example.com",
+    "roles": [{ "name": "Usuario", "value": "1" }],
+    "activate": [{ "name": "Activado", "value": "1" }]
+  }
+}
+```
+
+Store the `token` value from the response — you will need it for every subsequent authenticated request.
+
+## Using the Token
+
+Pass the JWT in the `token-access` request header on every call to a protected endpoint:
+
+```bash
+curl -X POST https://your-api.com/api/product/agregate \
+  -H "token-access: <your-jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{ "name": "Jersey Design", "price": 29.99 }'
+```
+
+<Warning>
+  The `token-access` header is custom — it is **NOT** the standard `Authorization: Bearer <token>` header. Sending the token in an `Authorization` header will result in a `403 Sin token` response.
+</Warning>
+
+## Password Recovery
+
+Forgotten passwords are reset through a two-step code-verification flow. Neither step requires an active session.
+
+**Step 1 — Request a recovery code**
+
+```http
+POST /api/user/recovery-password
+Content-Type: application/json
+
+{
+  "email": "jane@example.com"
+}
+```
+
+The API generates a new 5-digit code, stores it in `code_newpass`, and emails it to the user. The response confirms dispatch:
+
+```json
+{
+  "msj": "Te hemos enviado un código de 5 dígitos a tu correo para verificar el cambio de contraseña",
+  "status": true
+}
+```
+
+**Step 2 — Submit the code and new password**
+
+```http
+POST /api/user/update-password/:email
+Content-Type: application/json
+
+{
+  "code_confirm_pass": "31425",
+  "newPassword": "newS3cur3P@ss"
+}
+```
+
+Replace `:email` with the user's URL-encoded email address. The API verifies that `code_confirm_pass` matches the stored `code_newpass`. On success, the password is hashed and saved, and both code fields are cleared.
+
+```json
+{
+  "msj": "Contraseña actualizada correctamente",
+  "status": true
+}
+```
+
+## Token Middleware
+
+Every route that requires authentication is guarded by the `Token` middleware located at `src/middleware/tools/Token.js`. Here is what it does, step by step:
+
+1. **Reads** the value of the `token-access` header from the incoming request.
+2. **Returns `403 Sin token`** if the header is absent.
+3. **Verifies** the JWT signature against `config.SECRET` using `jsonwebtoken`.
+4. **Returns `401 Token inexistente`** if verification throws (expired, tampered, or malformed token).
+5. **Looks up** the user in MongoDB by the `id` claim decoded from the token.
+6. **Returns `404 Sin usuario`** if no matching document is found.
+7. **Attaches** the full Mongoose User document to `req.user` and calls `next()`.
+
+Downstream route handlers receive the live User document on `req.user`, so they always work with up-to-date data regardless of what was encoded in the token at sign time.
+
+```js
+export const Token = async (req, res, next) => {
+  try {
+    const token = req.headers["token-access"];
+
+    if (!token)
+      return res.status(403).json({ msj: "Sin token", status: false });
+
+    const decoded = jwt.verify(token, config.SECRET);
+
+    const user = await User.findById(decoded.id);
+    if (!user)
+      return res.status(404).json({ msj: "Sin usuario", status: false });
+
+    req.user = user;
+    next();
+  } catch (error) {
+    return res.status(401).json({ msj: "Token inexistente", status: false });
+  }
+};
+```

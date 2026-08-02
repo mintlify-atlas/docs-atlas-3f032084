@@ -1,0 +1,130 @@
+---
+title: "Update User Roles on TuKit — TuKit API"
+sidebarTitle: "Update Roles"
+description: "Replace the roles array on a target user's account. Restricted to users who hold the admin role (name: admin, value: 2)."
+---
+
+Role management in TuKit is scoped exclusively to admin users. This endpoint completely replaces the `roles` array on a target user's document using a MongoDB `$set` operation — it does **not** append to or merge with the existing roles. The caller must identify both the target user (`userId`) and themselves as the acting administrator (`adminId`). The controller verifies that the `adminId` account carries the role `{ name: "admin", value: "2" }` before proceeding; if it does not, the request is rejected regardless of the JWT being otherwise valid.
+
+**POST** `/api/user/update-role/:userId/:adminId`
+
+## Authentication
+
+<ParamField header="token-access" type="string" required>
+  A valid JWT obtained from the [Login](/api/users/login) endpoint.
+</ParamField>
+
+## Path Parameters
+
+<ParamField path="userId" type="string" required>
+  The MongoDB ObjectId of the user whose roles are being updated.
+</ParamField>
+
+<ParamField path="adminId" type="string" required>
+  The MongoDB ObjectId of the requesting administrator. This account must have a role of `{ name: "admin", value: "2" }` or the request will be rejected.
+</ParamField>
+
+## Request Body
+
+<ParamField body="roles" type="array" required>
+  An array of role objects to set on the target user. Each object must contain a `name` and a `value` key. The existing `roles` array is fully replaced by this value.
+
+  **Role reference:**
+  | `name`    | `value` | Description        |
+  |-----------|---------|--------------------|
+  | `Usuario` | `"1"`   | Standard user      |
+  | `admin`   | `"2"`   | Administrator      |
+
+  **Example value:**
+  ```json
+  [
+    { "name": "admin", "value": "2" }
+  ]
+  ```
+</ParamField>
+
+## Response
+
+### 200 — Success
+
+<ResponseField name="msj" type="string">
+  Human-readable confirmation that the roles were updated (`"Rol de usuario actualizado correctamente"`).
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  Always `true` on success.
+</ResponseField>
+
+<ResponseField name="updatingRoles" type="object">
+  The raw result object returned by Mongoose's `updateOne()`. Contains MongoDB write-result metadata.
+
+  <Expandable title="updatingRoles fields">
+    <ResponseField name="acknowledged" type="boolean">
+      Whether the write was acknowledged by the database.
+    </ResponseField>
+    <ResponseField name="matchedCount" type="number">
+      Number of documents matched by the query (should be `1`).
+    </ResponseField>
+    <ResponseField name="modifiedCount" type="number">
+      Number of documents actually modified (should be `1`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error Responses
+
+| Status | Cause |
+|--------|-------|
+| `404`  | No user document found for the provided `userId`. |
+| `404`  | No user document found for the provided `adminId`. |
+| `203`  | The `adminId` account does not have a role of `{ name: "admin", value: "2" }`. |
+| `500`  | Unexpected server or database error. |
+
+<Warning>
+  This endpoint performs a full replacement of the `roles` array, not a partial merge. Sending `[{ "name": "admin", "value": "2" }]` will remove any other roles previously assigned to the target user.
+</Warning>
+
+## Example
+
+```bash
+curl -X POST https://your-tukit-api.com/api/user/update-role/64f1a2b3c4d5e6f7a8b9c0d1/64f9z9z9z9z9z9z9z9z9z9z9 \
+  -H "Content-Type: application/json" \
+  -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "roles": [
+      { "name": "admin", "value": "2" }
+    ]
+  }'
+```
+
+**Success response:**
+
+```json
+{
+  "msj": "Rol de usuario actualizado correctamente",
+  "status": true,
+  "updatingRoles": {
+    "acknowledged": true,
+    "matchedCount": 1,
+    "modifiedCount": 1
+  }
+}
+```
+
+**Error — adminId lacks admin role:**
+
+```json
+{
+  "msj": "No tienes permisos para esta función",
+  "status": false
+}
+```
+
+**Error — target user not found:**
+
+```json
+{
+  "msj": "Usuario no encontrado",
+  "status": false
+}
+```

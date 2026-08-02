@@ -1,0 +1,122 @@
+---
+title: "Update a TuKit User Profile — TuKit API"
+sidebarTitle: "Update User"
+description: "Update the display name of an existing user account. Requires a valid JWT and the requesting user can only update their own account."
+---
+
+This endpoint allows an authenticated user to update their own profile information. Currently, the only mutable field exposed through this endpoint is `userName`. The user document is located by the `userId` path parameter, and as a safety check the controller also verifies that the resolved document's `_id` matches the supplied `userId` — a mismatch returns a `403` error. Users can only modify their own account; updating another user's profile requires no separate permission check beyond the ID match, so ensure the `userId` in the URL corresponds to the token owner's ID.
+
+**POST** `/api/user/update-user/:userId`
+
+## Authentication
+
+<ParamField header="token-access" type="string" required>
+  A valid JWT obtained from the [Login](/api/users/login) endpoint. The middleware verifies this token before the controller logic runs.
+</ParamField>
+
+## Path Parameters
+
+<ParamField path="userId" type="string" required>
+  The MongoDB ObjectId of the user account to update. Must match the `_id` of the authenticated user's account.
+</ParamField>
+
+## Request Body
+
+<ParamField body="userName" type="string">
+  The new display name to set on the account. If omitted, the existing `userName` is preserved unchanged.
+</ParamField>
+
+## Response
+
+### 200 — Success
+
+<ResponseField name="msj" type="string">
+  Human-readable confirmation that the update was applied (`"Usuario actualizado correctamente"`).
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  Always `true` on success.
+</ResponseField>
+
+<ResponseField name="updateUser" type="object">
+  The full updated user document as returned by Mongoose after `.save()`.
+
+  <Expandable title="updateUser fields">
+    <ResponseField name="_id" type="string">
+      MongoDB ObjectId of the user.
+    </ResponseField>
+    <ResponseField name="userName" type="string">
+      The updated display name.
+    </ResponseField>
+    <ResponseField name="email" type="string">
+      The user's lowercased email address (unchanged).
+    </ResponseField>
+    <ResponseField name="roles" type="array">
+      The user's current roles array (unchanged by this endpoint).
+    </ResponseField>
+    <ResponseField name="activate" type="array">
+      The user's current activation status (unchanged by this endpoint).
+    </ResponseField>
+    <ResponseField name="updatedAt" type="string">
+      ISO 8601 timestamp of the update.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error Responses
+
+| Status | Cause |
+|--------|-------|
+| `404`  | No user document found for the provided `userId`. |
+| `403`  | The `userId` in the URL does not match the `_id` of the located user document. |
+| `500`  | Unexpected server or database error. |
+
+<Note>
+  To update other account properties such as `password` or `roles`, use the dedicated [Update Roles](/api/users/roles) or password-update endpoints.
+</Note>
+
+## Example
+
+```bash
+curl -X POST https://your-tukit-api.com/api/user/update-user/64f1a2b3c4d5e6f7a8b9c0d1 \
+  -H "Content-Type: application/json" \
+  -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "userName": "MarcosNewName"
+  }'
+```
+
+**Success response:**
+
+```json
+{
+  "msj": "Usuario actualizado correctamente",
+  "status": true,
+  "updateUser": {
+    "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+    "userName": "MarcosNewName",
+    "email": "marcos@example.com",
+    "roles": [{ "name": "Usuario", "value": "1" }],
+    "activate": [{ "name": "Activado", "value": "1" }],
+    "updatedAt": "2024-06-02T09:30:00.000Z"
+  }
+}
+```
+
+**Error — user not found:**
+
+```json
+{
+  "msj": "Usuario no encontrado",
+  "status": false
+}
+```
+
+**Error — ID mismatch:**
+
+```json
+{
+  "msj": "No tienes permitido hacer esta función",
+  "status": false
+}
+```

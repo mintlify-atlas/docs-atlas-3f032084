@@ -1,0 +1,176 @@
+---
+title: "Upload Payment Proof to a Cart — TuKit API"
+sidebarTitle: "Upload Proof"
+description: "Attach one or more payment proof images to an existing shopping cart order so the seller can review and confirm the transaction."
+---
+
+After a buyer creates an order with [Create Order](/api/shopping-cart/create), they must provide evidence that payment was made before the seller can confirm the purchase. This endpoint accepts one or more image files via `multipart/form-data` under the `image_proof` field. The server processes each image through Google Cloud Storage using the `imageGenerate` utility, records the upload date in `YYYY_M_D` format in the `image_proof_date` field, and returns the updated `ShoppingCart` document. Only the authenticated user who owns the cart (i.e. the original buyer) is permitted to upload proof — any other authenticated user receives a `203` permission error.
+
+## Method and path
+
+```
+POST /api/shopping-cart/load/:shoppingCartId/voucher
+```
+
+## Authentication
+
+A valid JWT must be passed in the `token-access` request header. The server verifies that `req.user._id` matches the `user._id` stored on the cart document. If they do not match the request is rejected with `203`.
+
+| Header | Required | Description |
+|---|---|---|
+| `token-access` | ✅ Yes | JWT of the buyer who created this cart |
+
+<Warning>
+  Only the buyer who created the order can upload proof. Attempting this as a different authenticated user — including the seller — returns `203 No tienes permisos para esta función`.
+</Warning>
+
+## Path parameters
+
+<ParamField path="shoppingCartId" type="string" required>
+  The MongoDB `_id` of the shopping cart returned in `savedBuy._id` from the [Create Order](/api/shopping-cart/create) response.
+</ParamField>
+
+## Request body
+
+The request must be sent as `multipart/form-data`. Multer is configured to accept an array of files under the field name `image_proof`, stored temporarily at `storage/image_pay/` before being transferred to Google Cloud Storage.
+
+<ParamField body="image_proof" type="file[]" required>
+  One or more image files representing the payment receipt or bank-transfer screenshot. Use the field name `image_proof` for every file in the multipart form. Accepted types depend on your Google Cloud Storage bucket configuration.
+</ParamField>
+
+<Note>
+  The `image_proof_date` field is computed server-side as `YYYY_M_D` (e.g. `"2024_7_12"`) using the server's current date at the time of the request. You do not need to send this value.
+</Note>
+
+## Responses
+
+### 200 — Proof uploaded
+
+<ResponseField name="msj" type="string">
+  `"Exelente!. En estos momentos su pago será válido, danos un momento"`
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  `true`
+</ResponseField>
+
+<ResponseField name="newShoppingCartProof" type="object">
+  The updated `ShoppingCart` document with `image_proof` and `image_proof_date` populated.
+
+  <Expandable title="ShoppingCart fields">
+    <ResponseField name="_id" type="string">
+      MongoDB ObjectId of the cart.
+    </ResponseField>
+    <ResponseField name="products" type="array">
+      Array of product snapshot objects. Each item contains:
+      `user` (seller info), `_id`, `title`, `category`, `price`, `format`, `typeProduct`, `discount`, `discountPrice`, `subtotal`.
+    </ResponseField>
+    <ResponseField name="user" type="object">
+      Buyer identity snapshot: `{ _id, userName, email, roles, activate }`.
+    </ResponseField>
+    <ResponseField name="total" type="number">
+      Total order value.
+    </ResponseField>
+    <ResponseField name="subtotal" type="number">
+      Order subtotal.
+    </ResponseField>
+    <ResponseField name="cantBuy" type="number">
+      Quantity purchased (always `1`).
+    </ResponseField>
+    <ResponseField name="first_name_client" type="string">
+      Buyer's first name.
+    </ResponseField>
+    <ResponseField name="last_name_client" type="string">
+      Buyer's last name.
+    </ResponseField>
+    <ResponseField name="confirmed_payment" type="object">
+      Payment status `{ key, name }`. Not yet confirmed — set by the seller via [Confirm Payment](/api/shopping-cart/confirm-payment).
+    </ResponseField>
+    <ResponseField name="image_proof" type="array">
+      Array of image objects or URLs stored in Google Cloud Storage, populated by this call.
+    </ResponseField>
+    <ResponseField name="image_proof_date" type="string">
+      Upload date formatted as `"YYYY_M_D"` (e.g. `"2024_7_12"`).
+    </ResponseField>
+    <ResponseField name="date_payment" type="string (ISO 8601)">
+      Original order creation timestamp.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string (ISO 8601)">
+      Mongoose `timestamps` field.
+    </ResponseField>
+    <ResponseField name="updatedAt" type="string (ISO 8601)">
+      Mongoose `timestamps` field — updated by this call.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error responses
+
+| Status | `msj` | Cause |
+|---|---|---|
+| `403` | `"Sin token"` | `token-access` header is missing |
+| `401` | `"Token inexistente"` | JWT is invalid or expired |
+| `404` | `"No encontrado"` | No `ShoppingCart` document matches `shoppingCartId` |
+| `203` | `"No tienes permisos para esta función"` | Authenticated user is not the owner of this cart |
+| `500` | *(error object)* | Unexpected server error |
+
+## Example
+
+```bash
+curl -X POST https://api.tukit.app/api/shopping-cart/load/65a0b1c2d3e4f5a6b7c8d9e0/voucher \
+  -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -F "image_proof=@/path/to/payment-receipt.jpg" \
+  -F "image_proof=@/path/to/bank-transfer-screenshot.png"
+```
+
+**Response**
+
+```json
+{
+  "msj": "Exelente!. En estos momentos su pago será válido, danos un momento",
+  "status": true,
+  "newShoppingCartProof": {
+    "_id": "65a0b1c2d3e4f5a6b7c8d9e0",
+    "products": [
+      {
+        "user": {
+          "_id": "63e1f2a3b4c5d6e7f8a9b0c1",
+          "userName": "seller_studio",
+          "email": "seller@studio.com",
+          "roles": [{ "name": "Vendedor", "value": "seller" }],
+          "activate": [{ "name": "Activo", "value": "active" }]
+        },
+        "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+        "title": "Kit Uniforme Clásico",
+        "category": "Uniforme",
+        "price": 25,
+        "format": "AI / PSD",
+        "typeProduct": "Pago",
+        "discount": "20% OFF",
+        "discountPrice": "19.99",
+        "subtotal": 19.99
+      }
+    ],
+    "user": {
+      "_id": "63a0b1c2d3e4f5a6b7c8d9e1",
+      "userName": "carlos_mendez",
+      "email": "carlos@email.com",
+      "roles": [{ "name": "Comprador", "value": "buyer" }],
+      "activate": [{ "name": "Activo", "value": "active" }]
+    },
+    "total": 19.99,
+    "subtotal": 19.99,
+    "cantBuy": 1,
+    "first_name_client": "Carlos",
+    "last_name_client": "Méndez",
+    "confirmed_payment": {},
+    "image_proof": [
+      "https://storage.googleapis.com/tukit-bucket/image_proof/receipt_001.jpg"
+    ],
+    "image_proof_date": "2024_7_12",
+    "date_payment": "2024-07-12T14:30:00.000Z",
+    "createdAt": "2024-07-12T14:30:00.000Z",
+    "updatedAt": "2024-07-12T15:05:00.000Z"
+  }
+}
+```

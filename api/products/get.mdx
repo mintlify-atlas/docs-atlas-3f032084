@@ -1,0 +1,215 @@
+---
+title: "Get a Single Product by ID from TuKit"
+sidebarTitle: "Get Product"
+description: "Retrieve the full details of a single marketplace product using its MongoDB ObjectId. Requires a valid token-access JWT. Returns the complete product document."
+---
+
+The Get Product endpoint fetches a single product document from the database by its MongoDB ObjectId. Any authenticated user (not just admins) may call this endpoint to load a complete product record including its file URLs, pricing, category, creator snapshot, and Mongoose timestamps. If the product exists, it is returned in the `data` field. If the lookup fails — for example because the ID is malformed or the document has been deleted — the server returns HTTP `203` with a descriptive error message. Unexpected infrastructure errors return `500`.
+
+**POST** `/api/product/get/:productId/productId`
+
+---
+
+## Authentication
+
+<Warning>
+  Every request must include a valid JWT in the `token-access` header.
+  This endpoint does not require admin privileges, but authentication is
+  still mandatory.
+</Warning>
+
+| Header         | Value              | Required |
+| -------------- | ------------------ | -------- |
+| `token-access` | `<your JWT token>` | ✅ Yes   |
+
+---
+
+## Path Parameters
+
+<ParamField path="productId" type="string" required>
+  The MongoDB ObjectId of the product to retrieve. This value is the `_id`
+  returned when the product was created or when products are listed.
+</ParamField>
+
+---
+
+## Request Body
+
+No request body is required or expected for this endpoint.
+
+---
+
+## Response
+
+### 200 — Product Loaded
+
+<ResponseField name="msj" type="string">
+  `"Cargando producto..."`
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  `true` on a successful lookup.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  The full product document for the requested ID.
+
+  <Expandable title="Product schema fields">
+    <ResponseField name="_id" type="string">
+      MongoDB ObjectId of the product.
+    </ResponseField>
+
+    <ResponseField name="title" type="string">
+      Display name of the product.
+    </ResponseField>
+
+    <ResponseField name="description" type="string">
+      Optional long-form description of the product.
+    </ResponseField>
+
+    <ResponseField name="category" type="string">
+      Product category. One of `"Uniforme"` or `"Tipografía"`.
+    </ResponseField>
+
+    <ResponseField name="price" type="number">
+      Base price of the product. Defaults to `0`.
+    </ResponseField>
+
+    <ResponseField name="archivoUrl" type="array">
+      Array of stored file path strings for the primary design file.
+    </ResponseField>
+
+    <ResponseField name="imageUrl" type="array">
+      Array of stored file path strings for the product preview image.
+    </ResponseField>
+
+    <ResponseField name="format" type="string">
+      Design file format(s) included with the product, e.g. `"AI"`, `"PNG"`,
+      `"PSD"`.
+    </ResponseField>
+
+    <ResponseField name="shirtGif" type="array">
+      Array of stored file path strings for the shirt demonstration GIF/image.
+    </ResponseField>
+
+    <ResponseField name="shortsGif" type="array">
+      Array of stored file path strings for the shorts demonstration GIF/image.
+    </ResponseField>
+
+    <ResponseField name="typeProduct" type="string">
+      Payment type. One of `"Pago"` (paid) or `"Gratuito"` (free).
+    </ResponseField>
+
+    <ResponseField name="discount" type="string">
+      Discount label or numeric percentage string. Defaults to
+      `"Sin descuento"` when no discount has been applied.
+    </ResponseField>
+
+    <ResponseField name="discountPrice" type="string">
+      Calculated discounted price stored as a string. Empty string when no
+      discount is active.
+    </ResponseField>
+
+    <ResponseField name="minCant" type="number">
+      Minimum purchase quantity. Defaults to `1`.
+    </ResponseField>
+
+    <ResponseField name="date" type="string">
+      ISO 8601 date set at document creation via `Date.now`.
+    </ResponseField>
+
+    <ResponseField name="user" type="object">
+      Snapshot of the admin user who created the product, embedded at creation
+      time.
+      <Expandable title="user fields">
+        <ResponseField name="_id" type="string">
+          The creator's user ID.
+        </ResponseField>
+        <ResponseField name="userName" type="string">
+          The creator's username.
+        </ResponseField>
+        <ResponseField name="email" type="string">
+          The creator's email address.
+        </ResponseField>
+        <ResponseField name="roles" type="array">
+          Array of role objects `{ name: string, value: string }`.
+        </ResponseField>
+        <ResponseField name="activate" type="array">
+          Array of activation status objects `{ name: string, value: string }`.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 timestamp automatically added by Mongoose `timestamps: true`.
+    </ResponseField>
+
+    <ResponseField name="updatedAt" type="string">
+      ISO 8601 timestamp of the most recent update, maintained by Mongoose
+      `timestamps: true`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Error Responses
+
+| Status | Condition                                   | `status` |
+| ------ | ------------------------------------------- | -------- |
+| `203`  | Product not found or MongoDB lookup failed  | `false`  |
+| `500`  | Unexpected server error                     | —        |
+
+```json 203 — Error Loading Product
+{
+  "msj": "Error al cargar producto",
+  "status": false
+}
+```
+
+---
+
+## Example
+
+<Note>
+  Replace `<YOUR_TOKEN>` with a valid JWT and `<PRODUCT_ID>` with the
+  MongoDB ObjectId of the product you want to retrieve.
+</Note>
+
+```bash cURL
+curl -X POST https://your-api-domain.com/api/product/get/665a1f2e8c4b2a001e3d9f01/productId \
+  -H "token-access: <YOUR_TOKEN>"
+```
+
+```json Success Response
+{
+  "msj": "Cargando producto...",
+  "status": true,
+  "data": {
+    "_id": "665a1f2e8c4b2a001e3d9f01",
+    "title": "Club Deportivo Tigres 2025",
+    "description": "Kit completo de uniforme para temporada 2025.",
+    "category": "Uniforme",
+    "price": 12.99,
+    "archivoUrl": ["storage/product/23design.ai"],
+    "imageUrl": ["storage/product/7preview.png"],
+    "format": "AI",
+    "shirtGif": ["storage/product/12shirt.gif"],
+    "shortsGif": ["storage/product/45shorts.gif"],
+    "typeProduct": "Pago",
+    "discount": "Sin descuento",
+    "discountPrice": "",
+    "minCant": 1,
+    "date": "2025-06-01T14:30:00.000Z",
+    "user": {
+      "_id": "664f0a1c3b2e1a001d2c8e00",
+      "userName": "adminuser",
+      "email": "admin@tukit.com",
+      "roles": [{ "name": "admin", "value": "2" }],
+      "activate": [{ "name": "active", "value": "true" }]
+    },
+    "createdAt": "2025-06-01T14:30:00.000Z",
+    "updatedAt": "2025-06-02T09:15:00.000Z"
+  }
+}
+```

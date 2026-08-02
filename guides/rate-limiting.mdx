@@ -1,0 +1,179 @@
+---
+title: "Rate Limiting and IP Blocking in TuKit"
+sidebarTitle: "Rate Limiting"
+description: "TuKit uses express-rate-limit to throttle login attempts and tracks repeat offenders in MongoDB, permanently blocking abusive IPs and devices."
+---
+
+TuKit implements layered protection against brute-force attacks using `express-rate-limit` with custom handlers that escalate penalties and persist blocked devices to MongoDB. Rather than applying a flat lockout, the system progressively widens the penalty window on each repeat violation for login attempts, while registration abuse triggers a permanent device-level block written to the `BlockedIp` collection. Every incoming request is also checked against that collection before reaching any route handler.
+
+## Login Rate Limiting
+
+The `appLimiterLogin` limiter guards the login endpoint against credential-stuffing and brute-force attacks.
+
+<CardGroup cols={2}>
+  <Card title="Window" icon="clock">
+    5 minutes (`windowMs: 5 * 60 * 1000`)
+  </Card>
+  <Card title="Attempt Limit" icon="shield">
+    5 attempts per IP per window (`limit: 5`)
+  </Card>
+</CardGroup>
+
+When the limit is exceeded, the handler calculates a **growing penalty window** based on how many times that IP has already been blocked:
+
+```javascript
+const nextWindowMs = (5 + attempsCount * 5) * 60 * 1000;
+```
+
+| Violation number | Extra wait (minutes) |
+|-----------------|---------------------|
+| 1st             | 5                   |
+| 2nd             | 10                  |
+| 3rd             | 15                  |
+| nth             | `5 + (n-1) * 5`     |
+
+The response includes a `Retry-After` header (in seconds) and a 429 status:
+
+```json
+{
+  "msj": "Demasiadas solicitudes. Podras volver a intentarlo en X minutos"
+}
+```
+
+If the IP is still within an active block window when a new request arrives, the response changes to:
+
+```json
+{
+  "msj": "Aún no puedes intentarlo, debes esperar X minutos"
+}
+```
+
+Keys are generated using `ipKeyGenerator` from `express-rate-limit`, so each IP address is tracked independently.
+
+## Registration Rate Limiting
+
+The `appLimiterRegister` limiter tracks registration attempts by a **composite key** of `IP address + deviceId cookie**:
+
+```javascript
+keyGenerator: (req) =>
+  `${ipKeyGenerator(req)}-${req.cookies.deviceId || "unknow"}`
+```
+
+<Steps>
+  <Step title="Attempt is counted">
+    Each request increments the in-memory counter for the `IP-deviceId` key. The last 5 email addresses used from that device are kept in a rolling buffer.
+  </Step>
+  <Step title="Limit reached (5 attempts)">
+    When `entry.count >= 5`, the middleware checks whether this IP+deviceId pair already exists in the `BlockedIp` MongoDB collection.
+  </Step>
+  <Step title="New block is persisted">
+    If no record exists, a new `BlockedIp` document is created, capturing the IP, deviceId, email, the list of attempted emails, and the block timestamp.
+  </Step>
+  <Step title="403 returned">
+    Whether newly blocked or already blocked, the response is:
+    ```json
+    {
+      "msj": "Tu dispositivo ha sido bloqueado por multiples intentos"
+    }
+    ```
+  </Step>
+</Steps>
+
+Before the hard block threshold, intermediate attempts receive a 429 with a progress indicator:
+
+```json
+{
+  "msj": "Intento 3/5"
+}
+```
+
+<Warning>
+  The `deviceId` comes from a cookie named `deviceId`. Clients must persist this cookie across requests to ensure block logic works correctly. If the cookie is absent, TuKit falls back to the string `"unknow"` as the device identifier, meaning all cookie-less requests from the same IP share a single counter.
+</Warning>
+
+## Block Checker Middleware
+
+The `blockChecker` middleware (`blockCheckMiddleware`) runs on every request that passes through the user router. It performs a MongoDB lookup to check whether the current IP and `deviceId` combination has been permanently banned:
+
+```javascript
+const blockedIp = await BlockedIp.findOne({ ip, deviceId });
+if (blockedIp) {
+  return res.status(403).json({
+    msj: "Tu dispositivo esta bloqueado por intento de vulneracion a nuestros sistemas",
+  });
+}
+```
+
+If a match is found, the request is rejected with **HTTP 403** before any route handler is reached. If no match is found, `next()` is called and the request continues normally.
+
+## Reset Middleware
+
+The `resetCounters` middleware is applied at the top of the User router to perform **in-memory housekeeping**. On each request it iterates over the `requestCounts` and `blockTimes` Maps and removes any entries whose block window has expired:
+
+```javascript
+const resetMiddleware = (req, res, next) => {
+  const now = Date.now();
+
+  requestCounts.forEach((_, key) => {
+    const blockTime = blockTimes.get(key);
+    if (now - blockTime > WINDOW_MS) {
+      requestCounts.delete(key);
+      blockTimes.delete(key);
+    }
+  });
+  next();
+};
+```
+
+This prevents unbounded memory growth in long-running server processes by purging stale tracking entries before the new request is handled.
+
+## BlockedIp Schema
+
+Permanently blocked devices are stored in the `BlockedIp` MongoDB collection. The schema is defined as follows:
+
+```javascript
+const BlockedIpSchema = new Schema(
+  {
+    ip:                { type: String, required: true },
+    deviceId:          { type: String, required: true },
+    email:             { type: String, required: true },
+    emailsIntentados:  { type: Array,  required: true },
+    blockTime:         { type: Date,   default: Date.now() },
+  },
+  { timestamps: true }
+);
+```
+
+<CardGroup cols={2}>
+  <Card title="ip" icon="network-wired">
+    The IPv4/IPv6 address of the blocked client, as resolved by Express.
+  </Card>
+  <Card title="deviceId" icon="fingerprint">
+    The value of the `deviceId` cookie sent by the client at the time of blocking.
+  </Card>
+  <Card title="email" icon="envelope">
+    The email address from the request body at the time of the final, blocking attempt.
+  </Card>
+  <Card title="emailsIntentados" icon="list">
+    A rolling array of up to 5 email addresses that were attempted from this device before the block was triggered.
+  </Card>
+  <Card title="blockTime" icon="calendar">
+    The `Date` at which the block was created. Defaults to `Date.now()` at schema definition time; the `timestamps` option also adds `createdAt` and `updatedAt`.
+  </Card>
+</CardGroup>
+
+## Rate Limit Response Headers
+
+TuKit configures `express-rate-limit` with:
+
+```javascript
+standardHeaders: true,
+legacyHeaders: false,
+```
+
+| Header set | Behaviour |
+|---|---|
+| `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` | **Sent** — `standardHeaders: true` enables RFC 6585-style headers on every rate-limited response. |
+| `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` | **Suppressed** — `legacyHeaders: false` disables the older `X-RateLimit-*` prefixed headers. |
+
+Clients should read the `RateLimit-Reset` header (Unix epoch seconds) to know when their window resets, and `Retry-After` (seconds) on 429 responses to know how long to back off.

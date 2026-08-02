@@ -1,0 +1,243 @@
+---
+title: "List Shopping Cart Orders — TuKit API"
+sidebarTitle: "List Orders"
+description: "Two paginated endpoints to retrieve shopping cart orders: one for the buyer's own purchases and one for the seller's incoming sales."
+---
+
+TuKit provides two distinct listing endpoints depending on which side of the transaction you are viewing. The **buyer** endpoint (`list-my-buy`) returns all carts where the authenticated user placed the order, querying on `user._id`. The **seller** endpoint (`list-my-shopping`) returns all carts that contain at least one product owned by the authenticated user, querying on `products.user._id`. Both endpoints share the same pagination middleware (`Paginate`), which computes `skippag` and `limit` from the optional path parameters `pag` and `perpage`, and sort results newest-first (`{ _id: -1 }`).
+
+---
+
+## Buyer's orders
+
+### Method and path
+
+```
+POST /api/shopping-cart/list-my-buy/:pag?/:perpage?
+```
+
+Returns all shopping cart orders where `user._id` matches the authenticated buyer.
+
+---
+
+## Seller's sales
+
+### Method and path
+
+```
+POST /api/shopping-cart/list-my-shopping/:pag?/:perpage?
+```
+
+Returns all shopping cart orders where at least one entry in `products[].user._id` matches the authenticated seller.
+
+---
+
+## Authentication
+
+Both endpoints require a valid JWT in the `token-access` header.
+
+| Header | Required | Description |
+|---|---|---|
+| `token-access` | ✅ Yes | JWT issued at login |
+
+<Warning>
+  Requests that omit the `token-access` header receive `403 Sin token`. An expired or invalid token returns `401 Token inexistente`.
+</Warning>
+
+## Path parameters
+
+Both endpoints accept the same optional path parameters.
+
+<ParamField path="pag" type="number">
+  Page number to retrieve. Defaults to `1` (first page). The `Paginate` middleware sets `skippag = (pag - 1) * perpage` when `pag > 1`, otherwise `skippag = 0`.
+</ParamField>
+
+<ParamField path="perpage" type="number">
+  Number of results per page. Defaults to `10` when omitted.
+</ParamField>
+
+<Note>
+  Pagination is handled entirely by the `Paginate` middleware before the route handler runs. The computed `skippag` and `limit` values are written onto `req.body` and used directly in the Mongoose `.skip()` and `.limit()` calls.
+</Note>
+
+## Query differences
+
+| Endpoint | MongoDB filter | Who uses it |
+|---|---|---|
+| `list-my-buy` | `{ "user._id": userId }` | The buyer who placed the orders |
+| `list-my-shopping` | `{ "products.user._id": userId }` | The seller whose products appear in the carts |
+
+## Responses
+
+Both endpoints return the same response shape on success.
+
+### 200 — Orders loaded
+
+<ResponseField name="msj" type="string">
+  - `"Cargando mis compras"` for `list-my-buy`
+  - `"Cargando mis ventas"` for `list-my-shopping`
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  `true`
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Paginated array of `ShoppingCart` documents, sorted newest-first.
+
+  <Expandable title="ShoppingCart fields">
+    <ResponseField name="_id" type="string">
+      MongoDB ObjectId of the cart.
+    </ResponseField>
+    <ResponseField name="products" type="array">
+      Array of product snapshot objects. Each item contains:
+      `user` (seller info: `_id`, `userName`, `email`, `roles`, `activate`),
+      `_id`, `title`, `category`, `price`, `format`, `typeProduct`, `discount`, `discountPrice`, `subtotal`.
+    </ResponseField>
+    <ResponseField name="user" type="object">
+      Buyer identity snapshot: `{ _id, userName, email, roles, activate }`.
+    </ResponseField>
+    <ResponseField name="total" type="number">
+      Total order value.
+    </ResponseField>
+    <ResponseField name="subtotal" type="number">
+      Order subtotal.
+    </ResponseField>
+    <ResponseField name="cantBuy" type="number">
+      Quantity purchased (always `1`).
+    </ResponseField>
+    <ResponseField name="first_name_client" type="string">
+      Buyer's first name.
+    </ResponseField>
+    <ResponseField name="last_name_client" type="string">
+      Buyer's last name.
+    </ResponseField>
+    <ResponseField name="confirmed_payment" type="object">
+      Payment status: `{ key: number, name: string }`.
+      `key: 1` = `"Pago"` (confirmed), `key: 2` = `"Pago pendiente"`.
+    </ResponseField>
+    <ResponseField name="image_proof" type="array">
+      Array of proof-of-payment image references stored in Google Cloud Storage.
+    </ResponseField>
+    <ResponseField name="image_proof_date" type="string">
+      Date the proof was uploaded, formatted as `"YYYY_M_D"`.
+    </ResponseField>
+    <ResponseField name="date_payment" type="string (ISO 8601)">
+      Order creation timestamp.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string (ISO 8601)">
+      Mongoose `timestamps` field.
+    </ResponseField>
+    <ResponseField name="updatedAt" type="string (ISO 8601)">
+      Mongoose `timestamps` field.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="pagination" type="object">
+  Pagination metadata.
+
+  <Expandable title="Pagination fields">
+    <ResponseField name="pag" type="string | number">
+      The `pag` path parameter value as received (e.g. `"2"`).
+    </ResponseField>
+    <ResponseField name="perpage" type="number">
+      The effective page size used for this query.
+    </ResponseField>
+    <ResponseField name="pags" type="number">
+      Total number of pages: `Math.ceil(totalDocuments / perpage)`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error responses
+
+| Status | `msj` | Cause |
+|---|---|---|
+| `403` | `"Sin token"` | `token-access` header is missing |
+| `401` | `"Token inexistente"` | JWT is invalid or expired |
+| `203` | `"Error al cargar mis compras"` | Mongoose query failed in `list-my-buy` |
+| `203` | `"Error al cargar mis ventas"` | Mongoose query failed in `list-my-shopping` |
+| `500` | *(error object)* | Unexpected server error |
+
+## Examples
+
+### List buyer's purchases — page 1, 10 per page (defaults)
+
+```bash
+curl -X POST https://api.tukit.app/api/shopping-cart/list-my-buy \
+  -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### List buyer's purchases — page 2, 5 per page
+
+```bash
+curl -X POST https://api.tukit.app/api/shopping-cart/list-my-buy/2/5 \
+  -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### List seller's incoming sales — page 1, default page size
+
+```bash
+curl -X POST https://api.tukit.app/api/shopping-cart/list-my-shopping \
+  -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+**Response (shared shape for both endpoints)**
+
+```json
+{
+  "msj": "Cargando mis compras",
+  "status": true,
+  "data": [
+    {
+      "_id": "65a0b1c2d3e4f5a6b7c8d9e0",
+      "products": [
+        {
+          "user": {
+            "_id": "63e1f2a3b4c5d6e7f8a9b0c1",
+            "userName": "seller_studio",
+            "email": "seller@studio.com",
+            "roles": [{ "name": "Vendedor", "value": "seller" }],
+            "activate": [{ "name": "Activo", "value": "active" }]
+          },
+          "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+          "title": "Kit Uniforme Clásico",
+          "category": "Uniforme",
+          "price": 25,
+          "format": "AI / PSD",
+          "typeProduct": "Pago",
+          "discount": "20% OFF",
+          "discountPrice": "19.99",
+          "subtotal": 19.99
+        }
+      ],
+      "user": {
+        "_id": "63a0b1c2d3e4f5a6b7c8d9e1",
+        "userName": "carlos_mendez",
+        "email": "carlos@email.com",
+        "roles": [{ "name": "Comprador", "value": "buyer" }],
+        "activate": [{ "name": "Activo", "value": "active" }]
+      },
+      "total": 19.99,
+      "subtotal": 19.99,
+      "cantBuy": 1,
+      "first_name_client": "Carlos",
+      "last_name_client": "Méndez",
+      "confirmed_payment": { "key": 1, "name": "Pago" },
+      "image_proof": [
+        "https://storage.googleapis.com/tukit-bucket/image_proof/receipt_001.jpg"
+      ],
+      "image_proof_date": "2024_7_12",
+      "date_payment": "2024-07-12T14:30:00.000Z",
+      "createdAt": "2024-07-12T14:30:00.000Z",
+      "updatedAt": "2024-07-12T15:10:00.000Z"
+    }
+  ],
+  "pagination": {
+    "pag": "1",
+    "perpage": 10,
+    "pags": 3
+  }
+}
+```

@@ -1,0 +1,163 @@
+---
+title: "Google OAuth 2.0 Login with Passport.js"
+sidebarTitle: "Google OAuth"
+description: "TuKit supports Google OAuth 2.0 sign-in via Passport.js. Users are created or found by googleId and authenticated with a session."
+---
+
+TuKit integrates Google OAuth 2.0 via the `passport-google-oauth20` strategy. When a user chooses to sign in with Google, Passport.js handles the redirect to Google's authorisation server, receives the callback, and either retrieves the existing User document (matched by the Google `id`) or creates a brand-new one populated with the profile data Google provides. In both cases, a JWT is generated and stored on the User document, and the user is serialised into an Express session for subsequent requests.
+
+## Prerequisites
+
+Before the Google OAuth flow can work, three environment variables must be present in the server's `.env` file:
+
+| Variable        | Description |
+|-----------------|-------------|
+| `CLIENT_ID`     | The OAuth 2.0 client ID from Google Cloud Console. |
+| `CLIENT_SECRET` | The OAuth 2.0 client secret from Google Cloud Console. |
+| `CLIENT_URL`    | The full callback URL registered with Google, e.g. `https://your-api.com/auth/google/callback`. |
+
+To obtain these credentials:
+
+1. Open the [Google Cloud Console](https://console.cloud.google.com/) and create or select a project.
+2. Navigate to **APIs & Services → Credentials** and click **Create Credentials → OAuth client ID**.
+3. Select **Web application**, then add the following as an **Authorised redirect URI**:
+   ```
+   <CLIENT_URL>/auth/google/callback
+   ```
+4. Copy the generated **Client ID** and **Client Secret** into your `.env`.
+
+## OAuth Endpoints
+
+TuKit exposes two routes in `src/app.js` that drive the OAuth flow:
+
+### `GET /auth/google`
+
+Initiates the Google OAuth flow. Passport redirects the browser to Google's authorisation page, requesting the `email` and `profile` scopes so that the callback receives the user's display name, email address, and unique Google ID.
+
+```http
+GET /auth/google
+```
+
+No request body or headers are required — this endpoint is visited directly by the user's browser.
+
+### `GET /auth/google/callback`
+
+The OAuth callback route. Google redirects here after the user grants (or denies) consent.
+
+```http
+GET /auth/google/callback
+```
+
+| Outcome | Redirect destination |
+|---------|----------------------|
+| Authentication succeeded | `/protected` |
+| Authentication failed    | `/auth/failure` |
+
+## How It Works
+
+The Passport strategy is configured in `src/middleware/lib/passport.js` and loaded into `src/app.js` at startup via `require("./middleware/lib/passport")`. The `verify` callback receives `accessToken`, `refreshToken`, and the Google `profile` object. It then follows this logic:
+
+1. **Existing user** — if a User document with `googleId === profile.id` already exists in MongoDB, a new JWT is signed for that user (`expiresIn: "365"`), stored on the document, and the user is passed to `done`.
+2. **New user** — if no matching document is found, a new User is created with:
+   - `googleId` set to `profile.id`
+   - `userName` set to `profile.displayName`
+   - `email` set to `profile.emails[0].value`
+   - `roles: [{ name: "Usuario", value: "1" }]` (standard user role)
+   - `activate: [{ name: "Activado", value: "1" }]` (immediately active — Google has already verified the email)
+   - A randomly generated 5-digit `login_code` and matching `login_code_confirmed`
+   - A JWT signed with `expiresIn: "365d"` stored in `token`
+
+Here is the exact strategy configuration from source:
+
+```js
+import passport from "passport";
+const GoogleStragey = require("passport-google-oauth20").Strategy;
+import config from "../../config";
+require("dotenv").config();
+import { User } from "../../models/User";
+import jwt from "jsonwebtoken";
+
+passport.use(
+  new GoogleStragey(
+    {
+      clientID: config.CLIENT_ID,
+      clientSecret: config.CLIENT_SECRET,
+      callbackURL: config.CLIENT_URL,
+    },
+    async (profile, done) => {
+      try {
+        let user = await User.findOne({ googleId: profile.id });
+
+        if (user) {
+          const token = jwt.sign({ id: user.id }, config.SECRET, {
+            expiresIn: "365",
+          });
+          user.token = token;
+          await user.save();
+          return done(null, user);
+        } else {
+          let code = "";
+          for (let index = 0; index < 5; index++) {
+            code += Math.floor(Math.random() * 5);
+          }
+
+          user = new User({
+            googleId: profile.id,
+            userName: profile.displayName,
+            email: profile.emails[0].value,
+            roles: [{ name: "Usuario", value: "1" }],
+            activate: [{ name: "Activado", value: "1" }],
+            login_code: code,
+            login_code_confirmed: code,
+            token: jwt.sign({ id: profile.id }, config.SECRET, {
+              expiresIn: "365d",
+            }),
+          });
+          await user.save();
+          return done(null, user);
+        }
+      } catch (err) {
+        return done(err, null);
+      }
+    }
+  )
+);
+
+passport.serializeUser((user, done) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser(async (id, done) => {
+  try {
+    const user = await User.findById(id);
+    done(null, user);
+  } catch (err) {
+    done(err, null);
+  }
+});
+```
+
+Passport serialises only the MongoDB `user.id` into the session cookie. On subsequent requests, `deserializeUser` uses that ID to fetch the full User document from MongoDB and attach it to `req.user`.
+
+## Session Protection
+
+After a successful OAuth callback, the user is redirected to `/protected`. This route is guarded by the `isLoggedIn` middleware defined in `src/app.js`, which checks `req.isAuthenticated()` — a method added to the request by Passport's session layer:
+
+```js
+function isLoggedIn(req, res, next) {
+  if (req.isAuthenticated()) {
+    return next();
+  }
+  res.redirect("/");
+}
+
+app.get("/protected", isLoggedIn, (req, res) => {
+  res.send(`Hola ${req.user.userName}`);
+});
+```
+
+Any request to `/protected` that does not have a valid session is redirected back to `/`, where the user can initiate the OAuth flow again.
+
+<Note>
+  Google OAuth uses **Express sessions** (configured with `express-session` in `src/app.js`), not JWT tokens passed in headers. It is a completely separate authentication path from the JWT-based login at `/api/user/login`. Clients that authenticate via Google OAuth do not need to send a `token-access` header for session-protected routes; however, the JWT stored on the User document is available if you need to bridge the two flows.
+</Note>

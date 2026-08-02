@@ -1,0 +1,80 @@
+---
+title: "Verify a New User Account — TuKit API"
+sidebarTitle: "Verify Account"
+description: "Confirm a newly registered account using the 5-digit code sent by email. Activates the account so the user can log in."
+---
+
+After a successful registration, TuKit sends a 5-digit verification code to the user's email address. This endpoint validates that code and, if correct, flips the account's `activate` status from `Inactivo` (value `"2"`) to `Activado` (value `"1"`). Until this step is completed the user cannot log in — the login endpoint will reject inactive accounts with a `403` response. The verification code is a one-time value generated at registration time and stored on the user document.
+
+**POST** `/api/user/verify-account`
+
+## Authentication
+
+No authentication required.
+
+## Request Body
+
+<ParamField body="email" type="string" required>
+  The email address used during registration. Must exactly match the address on file (the lookup is case-sensitive at the database level, so submit the address in the same form it was registered with).
+</ParamField>
+
+<ParamField body="code" type="string" required>
+  The 5-digit verification code delivered to the user's email inbox after registration. Codes consist of digits `1`–`5` only (each digit is generated via `Math.ceil(Math.random() * 5)`).
+</ParamField>
+
+## Response
+
+### 200 — Success
+
+<ResponseField name="msj" type="string">
+  Human-readable confirmation that the account has been verified and the user may now log in.
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  Always `true` on success.
+</ResponseField>
+
+<Note>
+  On success, two fields are updated on the user document internally: `login_code_confirmed` is set to the verified code value, and `activate` is updated to `[{ name: "Activado", value: "1" }]`. Neither value is returned in the response body.
+</Note>
+
+## Error Responses
+
+| Status | Cause |
+|--------|-------|
+| `203`  | No user found for the supplied email address. |
+| `203`  | The supplied code does not match the `login_code` stored on the user document. |
+| `500`  | Unexpected server or database error. |
+
+<Warning>
+  Both a missing user **and** a wrong code return the same `203` status and message. This is intentional to avoid leaking information about which email addresses are registered.
+</Warning>
+
+## Example
+
+```bash
+curl -X POST https://your-tukit-api.com/api/user/verify-account \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "marcos@example.com",
+    "code": "34512"
+  }'
+```
+
+**Success response:**
+
+```json
+{
+  "msj": "La cuenta ha sido confirmada.Inicia sesión",
+  "status": true
+}
+```
+
+**Error — incorrect code or user not found:**
+
+```json
+{
+  "msj": "Código de verificación incorrecto. Inténtalo nuevamente",
+  "status": false
+}
+```

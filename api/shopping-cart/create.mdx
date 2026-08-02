@@ -1,0 +1,240 @@
+---
+title: "Create a Shopping Cart Order — TuKit API"
+sidebarTitle: "Create Order"
+description: "Register a new purchase order for a product. The buyer must then upload a payment proof image before the seller can confirm the transaction."
+---
+
+When a buyer decides to purchase a product on TuKit, this endpoint registers the order in the system. The controller looks up the product by its `productId` path parameter, builds the cart with line-item subtotals (using `discountPrice` when present, otherwise `price`), and associates the cart with the authenticated buyer. The quantity per line is fixed at `1` (`cantBuy: 1`). After a successful order creation the cart's `confirmed_payment` status is unset until the buyer uploads a proof-of-payment image and the seller validates it.
+
+<Steps>
+  <Step title="Create the order">
+    Call `POST /api/shopping-cart/:productId` with the product list and client details. The API returns a `savedBuy` object containing the new cart `_id` you will need in the next step.
+  </Step>
+  <Step title="Upload payment proof">
+    Call `POST /api/shopping-cart/load/:shoppingCartId/voucher` with the payment screenshot or bank transfer receipt as `multipart/form-data`. See [Upload Proof](/api/shopping-cart/upload-proof).
+  </Step>
+  <Step title="Seller confirms payment">
+    The product owner calls `POST /api/shopping-cart/update-payment/:shoppingCartId/confirmed` with `confirmed_payment: {key: 1, name: "Pago"}` to approve the transaction. See [Confirm Payment](/api/shopping-cart/confirm-payment).
+  </Step>
+</Steps>
+
+## Method and path
+
+```
+POST /api/shopping-cart/:productId
+```
+
+## Authentication
+
+A valid JWT must be passed in the `token-access` request header. The token is obtained from the [login](/api/users/login) endpoint. The authenticated user becomes the **buyer** (`user`) on the created cart document.
+
+| Header | Required | Description |
+|---|---|---|
+| `token-access` | ✅ Yes | JWT issued at login |
+
+<Warning>
+  Requests that omit the `token-access` header receive a `403 Sin token` response. An expired or invalid token returns `401 Token inexistente`.
+</Warning>
+
+## Path parameters
+
+<ParamField path="productId" type="string" required>
+  The MongoDB `_id` of the product being purchased. The controller calls `Product.findById(productId)` and returns `404` if no matching document exists.
+</ParamField>
+
+## Request body
+
+<ParamField body="products" type="array" required>
+  Array of product objects included in the order. Each element is used to calculate a line-item `subtotal`.
+
+  <Expandable title="Product object fields">
+    <ParamField body="_id" type="string" required>
+      MongoDB `_id` of the product.
+    </ParamField>
+    <ParamField body="title" type="string" required>
+      Display title of the product.
+    </ParamField>
+    <ParamField body="category" type="string" required>
+      Product category. Accepted values: `"Uniforme"` or `"Tipografía"`.
+    </ParamField>
+    <ParamField body="price" type="number" required>
+      Base price. Used for the subtotal calculation when `discountPrice` is not provided.
+    </ParamField>
+    <ParamField body="discountPrice" type="string">
+      Discounted price as a numeric string (e.g. `"9.99"`). When present and non-empty, the controller uses this value instead of `price` to calculate the subtotal.
+    </ParamField>
+    <ParamField body="typeProduct" type="string" required>
+      Pricing model. Accepted values: `"Pago"` or `"Gratuito"`.
+    </ParamField>
+    <ParamField body="format" type="string" required>
+      File or delivery format of the product.
+    </ParamField>
+    <ParamField body="discount" type="string">
+      Human-readable discount label (e.g. `"Sin descuento"`).
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="client" type="object" required>
+  Buyer name details stored on the cart document.
+
+  <Expandable title="Client object fields">
+    <ParamField body="first_name_client" type="string" required>
+      Buyer's first name.
+    </ParamField>
+    <ParamField body="last_name_client" type="string" required>
+      Buyer's last name.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<Note>
+  The `cantBuy` quantity is **always set to `1`** by the server regardless of any value provided in the request body. Each product line has its `subtotal` computed as `cantBuy × (discountPrice ?? price)`. The `total` and `subtotal` fields on the cart document both equal the sum of all product subtotals.
+</Note>
+
+## Responses
+
+### 200 — Order created
+
+<ResponseField name="msj" type="string">
+  `"Compra registrada. Para confirmar el producto, debe cargar el justificante de pago"`
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  `true`
+</ResponseField>
+
+<ResponseField name="savedBuy" type="object">
+  The full persisted `ShoppingCart` document.
+
+  <Expandable title="ShoppingCart fields">
+    <ResponseField name="_id" type="string">
+      Unique MongoDB ObjectId of the cart.
+    </ResponseField>
+    <ResponseField name="products" type="array">
+      Array of product snapshot objects copied from the matched `Product` document. Each item contains:
+      `user` (seller info), `_id`, `title`, `category`, `price`, `format`, `typeProduct`, `discount`, `discountPrice`, `subtotal`.
+    </ResponseField>
+    <ResponseField name="user" type="object">
+      Buyer identity snapshot: `{ _id, userName, email, roles, activate }`.
+    </ResponseField>
+    <ResponseField name="total" type="number">
+      Sum of all product subtotals.
+    </ResponseField>
+    <ResponseField name="subtotal" type="number">
+      Equal to `total` at creation time.
+    </ResponseField>
+    <ResponseField name="cantBuy" type="number">
+      Always `1`.
+    </ResponseField>
+    <ResponseField name="first_name_client" type="string">
+      Buyer's first name.
+    </ResponseField>
+    <ResponseField name="last_name_client" type="string">
+      Buyer's last name.
+    </ResponseField>
+    <ResponseField name="confirmed_payment" type="object">
+      Payment status object `{ key, name }`. Not yet set at creation — populated by the seller via [Confirm Payment](/api/shopping-cart/confirm-payment).
+    </ResponseField>
+    <ResponseField name="image_proof" type="array">
+      Payment proof images. Empty until the buyer uploads via [Upload Proof](/api/shopping-cart/upload-proof).
+    </ResponseField>
+    <ResponseField name="image_proof_date" type="string">
+      Date the proof was uploaded, formatted as `"YYYY_M_D"`. Empty string at creation.
+    </ResponseField>
+    <ResponseField name="date_payment" type="string (ISO 8601)">
+      Timestamp set automatically at document creation.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string (ISO 8601)">
+      Mongoose `timestamps` field.
+    </ResponseField>
+    <ResponseField name="updatedAt" type="string (ISO 8601)">
+      Mongoose `timestamps` field.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error responses
+
+| Status | `msj` | Cause |
+|---|---|---|
+| `403` | `"Sin token"` | `token-access` header is missing |
+| `401` | `"Token inexistente"` | JWT is invalid or expired |
+| `404` | `"Producto no encontrado"` | No `Product` document matches `productId` |
+| `500` | *(error object)* | Unexpected server error |
+
+## Example
+
+```bash
+curl -X POST https://api.tukit.app/api/shopping-cart/64f1a2b3c4d5e6f7a8b9c0d1 \
+  -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "products": [
+      {
+        "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+        "title": "Kit Uniforme Clásico",
+        "category": "Uniforme",
+        "price": 25.00,
+        "discountPrice": "19.99",
+        "typeProduct": "Pago",
+        "format": "AI / PSD",
+        "discount": "20% OFF"
+      }
+    ],
+    "client": {
+      "first_name_client": "Carlos",
+      "last_name_client": "Méndez"
+    }
+  }'
+```
+
+**Response**
+
+```json
+{
+  "msj": "Compra registrada. Para confirmar el producto, debe cargar el justificante de pago",
+  "status": true,
+  "savedBuy": {
+    "_id": "65a0b1c2d3e4f5a6b7c8d9e0",
+    "products": [
+      {
+        "user": {
+          "_id": "63e1f2a3b4c5d6e7f8a9b0c1",
+          "userName": "seller_studio",
+          "email": "seller@studio.com",
+          "roles": [{ "name": "Vendedor", "value": "seller" }],
+          "activate": [{ "name": "Activo", "value": "active" }]
+        },
+        "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+        "title": "Kit Uniforme Clásico",
+        "category": "Uniforme",
+        "price": 25,
+        "format": "AI / PSD",
+        "typeProduct": "Pago",
+        "discount": "20% OFF",
+        "discountPrice": "19.99",
+        "subtotal": 19.99
+      }
+    ],
+    "user": {
+      "_id": "63a0b1c2d3e4f5a6b7c8d9e1",
+      "userName": "carlos_mendez",
+      "email": "carlos@email.com",
+      "roles": [{ "name": "Comprador", "value": "buyer" }],
+      "activate": [{ "name": "Activo", "value": "active" }]
+    },
+    "total": 19.99,
+    "subtotal": 19.99,
+    "cantBuy": 1,
+    "first_name_client": "Carlos",
+    "last_name_client": "Méndez",
+    "confirmed_payment": {},
+    "image_proof": [],
+    "image_proof_date": "",
+    "date_payment": "2024-07-12T14:30:00.000Z",
+    "createdAt": "2024-07-12T14:30:00.000Z",
+    "updatedAt": "2024-07-12T14:30:00.000Z"
+  }
+}
+```

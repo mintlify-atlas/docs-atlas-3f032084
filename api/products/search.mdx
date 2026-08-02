@@ -1,0 +1,255 @@
+---
+title: "Search Products by Title in the TuKit Marketplace"
+sidebarTitle: "Search Products"
+description: "Search marketplace products by title keyword within a specific category. Two dedicated endpoints cover uniform and typography searches with pagination and payment-type filtering."
+---
+
+TuKit exposes two category-scoped search endpoints that accept a free-text `query` parameter and match it against product titles using a case-insensitive MongoDB regex. One endpoint searches only products in the `"Uniforme"` category and the other searches only `"Tipografia"`. Both endpoints support optional pagination via path parameters and accept an optional `typeProduct` body field to further narrow results to paid or free products. Results are sorted by newest first (`_id: -1`) and include a `pagination` object so clients can implement page controls.
+
+**POST** `/api/product/search-uniform/:query/:pag?/:perpage?`
+
+**POST** `/api/product/search-typography/:query/:pag?/:perpage?`
+
+---
+
+## Authentication
+
+<Warning>
+  Both endpoints require a valid JWT in the `token-access` header.
+  Standard user authentication is sufficient — admin privileges are not
+  required.
+</Warning>
+
+| Header         | Value              | Required |
+| -------------- | ------------------ | -------- |
+| `token-access` | `<your JWT token>` | ✅ Yes   |
+
+---
+
+## Path Parameters
+
+<ParamField path="query" type="string" required>
+  The search term to match against product titles. The lookup uses a
+  case-insensitive regex (`$regex` with `$options: "i"`), so partial matches
+  are supported. For example, `"tigres"` will match `"Club Tigres 2025"`.
+</ParamField>
+
+<ParamField path="pag" type="number">
+  Page number to retrieve, starting at `1`. Handled by the `Paginate`
+  middleware before the controller runs. Optional — defaults to page `1`
+  when omitted.
+</ParamField>
+
+<ParamField path="perpage" type="number">
+  Number of results per page. Handled by the `Paginate` middleware. Optional
+  — the middleware supplies a default when omitted.
+</ParamField>
+
+---
+
+## Request Body
+
+<ParamField body="typeProduct" type="string">
+  Filter results by payment type. When provided, only products matching this
+  value are returned.
+
+  Allowed values: `"Pago"` | `"Gratuito"`
+</ParamField>
+
+---
+
+## Category Scope
+
+<Note>
+  The two endpoints are identical in behaviour except for the category filter
+  applied server-side:
+
+  | Endpoint | Category filter applied |
+  |---|---|
+  | `/search-uniform/…` | `category: "Uniforme"` |
+  | `/search-typography/…` | `category: "Tipografia"` |
+
+  Note the spelling difference: the database stores uniform products as
+  `"Uniforme"` and typography products as `"Tipografia"` (no accent) inside
+  this search controller, so queries against the wrong endpoint will return
+  zero results regardless of the search term.
+</Note>
+
+---
+
+## Response
+
+### 200 — Search Results
+
+<ResponseField name="msj" type="string">
+  A loading message: `"Cargando uniformes..."` for the uniform endpoint, or
+  `"Cargando tipografías..."` for the typography endpoint.
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  `true` on success.
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of product documents matching the search criteria, sorted by newest
+  first. May be an empty array if no products match.
+
+  <Expandable title="Product item fields">
+    <ResponseField name="_id" type="string">MongoDB ObjectId.</ResponseField>
+    <ResponseField name="title" type="string">Product title.</ResponseField>
+    <ResponseField name="description" type="string">Product description.</ResponseField>
+    <ResponseField name="category" type="string">`"Uniforme"` or `"Tipografía"`.</ResponseField>
+    <ResponseField name="price" type="number">Base price.</ResponseField>
+    <ResponseField name="format" type="string">Design file format.</ResponseField>
+    <ResponseField name="typeProduct" type="string">`"Pago"` or `"Gratuito"`.</ResponseField>
+    <ResponseField name="archivoUrl" type="array">Design file path entries.</ResponseField>
+    <ResponseField name="imageUrl" type="array">Preview image path entries.</ResponseField>
+    <ResponseField name="shirtGif" type="array">Shirt GIF path entries.</ResponseField>
+    <ResponseField name="shortsGif" type="array">Shorts GIF path entries.</ResponseField>
+    <ResponseField name="discount" type="string">Discount label or percentage.</ResponseField>
+    <ResponseField name="discountPrice" type="string">Calculated discounted price.</ResponseField>
+    <ResponseField name="minCant" type="number">Minimum purchase quantity.</ResponseField>
+    <ResponseField name="date" type="string">ISO 8601 creation date.</ResponseField>
+    <ResponseField name="user" type="object">Creator snapshot `{ _id, userName, email, roles, activate }`.</ResponseField>
+    <ResponseField name="createdAt" type="string">Mongoose timestamp.</ResponseField>
+    <ResponseField name="updatedAt" type="string">Mongoose timestamp.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="pagination" type="object">
+  Pagination metadata for the current result set.
+
+  <Expandable title="Pagination fields">
+    <ResponseField name="pag" type="string | number">
+      The current page number as passed in the path parameter.
+    </ResponseField>
+    <ResponseField name="perpage" type="number">
+      The limit value used for this page (sourced from the `Paginate`
+      middleware).
+    </ResponseField>
+    <ResponseField name="pags" type="number">
+      Total number of pages calculated as
+      `Math.ceil(totalDocuments / perpage)`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Error Responses
+
+| Status | Condition               |
+| ------ | ----------------------- |
+| `500`  | Unexpected server error |
+
+---
+
+## Examples
+
+<Tabs>
+  <Tab title="Search uniforms (paid)">
+    Search for uniforms whose title contains "tigres", returning only paid
+    products on page 1 with 10 results per page.
+
+    ```bash cURL
+    curl -X POST \
+      "https://your-api-domain.com/api/product/search-uniform/tigres/1/10" \
+      -H "token-access: <YOUR_TOKEN>" \
+      -H "Content-Type: application/json" \
+      -d '{ "typeProduct": "Pago" }'
+    ```
+
+    ```json Success Response
+    {
+      "msj": "Cargando uniformes...",
+      "status": true,
+      "data": [
+        {
+          "_id": "665a1f2e8c4b2a001e3d9f01",
+          "title": "Club Deportivo Tigres 2025",
+          "description": "Kit completo de uniforme para temporada 2025.",
+          "category": "Uniforme",
+          "price": 12.99,
+          "format": "AI",
+          "typeProduct": "Pago",
+          "archivoUrl": ["storage/product/23design.ai"],
+          "imageUrl": ["storage/product/7preview.png"],
+          "shirtGif": ["storage/product/12shirt.gif"],
+          "shortsGif": ["storage/product/45shorts.gif"],
+          "discount": "Sin descuento",
+          "discountPrice": "",
+          "minCant": 1,
+          "date": "2025-06-01T14:30:00.000Z",
+          "user": {
+            "_id": "664f0a1c3b2e1a001d2c8e00",
+            "userName": "adminuser",
+            "email": "admin@tukit.com",
+            "roles": [{ "name": "admin", "value": "2" }],
+            "activate": [{ "name": "active", "value": "true" }]
+          },
+          "createdAt": "2025-06-01T14:30:00.000Z",
+          "updatedAt": "2025-06-01T14:30:00.000Z"
+        }
+      ],
+      "pagination": {
+        "pag": "1",
+        "perpage": 10,
+        "pags": 1
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="Search typography (free)">
+    Search for typography products whose title contains "bold", returning only
+    free products. Pagination path parameters are omitted to use defaults.
+
+    ```bash cURL
+    curl -X POST \
+      "https://your-api-domain.com/api/product/search-typography/bold" \
+      -H "token-access: <YOUR_TOKEN>" \
+      -H "Content-Type: application/json" \
+      -d '{ "typeProduct": "Gratuito" }'
+    ```
+
+    ```json Success Response
+    {
+      "msj": "Cargando tipografías...",
+      "status": true,
+      "data": [
+        {
+          "_id": "665b2a3f9d5c3b002f4e0a02",
+          "title": "Bold Sport Typography Pack",
+          "description": "Tipografía deportiva estilo negrita para camisetas.",
+          "category": "Tipografía",
+          "price": 0,
+          "format": "TTF",
+          "typeProduct": "Gratuito",
+          "archivoUrl": ["storage/product/9font.ttf"],
+          "imageUrl": ["storage/product/4preview.png"],
+          "shirtGif": [],
+          "shortsGif": [],
+          "discount": "Sin descuento",
+          "discountPrice": "",
+          "minCant": 1,
+          "date": "2025-05-20T10:00:00.000Z",
+          "user": {
+            "_id": "664f0a1c3b2e1a001d2c8e00",
+            "userName": "adminuser",
+            "email": "admin@tukit.com",
+            "roles": [{ "name": "admin", "value": "2" }],
+            "activate": [{ "name": "active", "value": "true" }]
+          },
+          "createdAt": "2025-05-20T10:00:00.000Z",
+          "updatedAt": "2025-05-20T10:00:00.000Z"
+        }
+      ],
+      "pagination": {
+        "pag": undefined,
+        "perpage": 10,
+        "pags": 1
+      }
+    }
+    ```
+  </Tab>
+</Tabs>

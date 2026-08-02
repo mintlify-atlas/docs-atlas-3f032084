@@ -1,0 +1,63 @@
+---
+title: "Authentication in TuKit: JWT and Google OAuth"
+sidebarTitle: "Overview"
+description: "TuKit supports two authentication methods: JWT-based email/password login with account verification, and Google OAuth 2.0 via Passport.js."
+---
+
+TuKit provides two distinct authentication strategies for clients of the sporting designs marketplace API. The first is a classic email/password flow backed by JSON Web Tokens (JWT), which requires users to verify their account via a 5-digit emailed code before they can log in. The second is a Google OAuth 2.0 flow implemented with Passport.js, which lets users sign in with an existing Google account — creating a new User document automatically if none exists. Both strategies ultimately result in the user possessing a JWT that can be used to access protected resources, but they follow separate code paths and session mechanisms.
+
+<CardGroup cols={2}>
+  <Card title="JWT Authentication" icon="key" href="/auth/jwt">
+    Register with email and password, verify your account with a 5-digit code,
+    and log in to receive a signed JWT valid for 365 days.
+  </Card>
+  <Card title="Google OAuth 2.0" icon="google" href="/auth/google-oauth">
+    Sign in with your Google account via Passport.js. New users are created
+    automatically; returning users are looked up by their Google ID.
+  </Card>
+</CardGroup>
+
+## User Activation Flow
+
+Every email/password account must pass through an activation step before login is permitted. The sequence is:
+
+<Steps>
+  <Step title="Register">
+    The client POSTs to `/api/user/register` with `userName`, `email`, and `password`. The API creates the user record with `activate` set to `[{name: "Inactivo", value: "2"}]` and generates a random 5-digit numeric code stored in the `login_code` field.
+  </Step>
+  <Step title="Receive Verification Code">
+    The 5-digit code is immediately dispatched to the user's email address via Nodemailer (Gmail transport). The email includes the code prominently so the user can copy it.
+  </Step>
+  <Step title="Verify Account">
+    The client POSTs the email address and the received code to `/api/user/verify-account`. If the code matches `login_code`, the API copies the code into `login_code_confirmed` and updates `activate` to `[{name: "Activado", value: "1"}]`.
+  </Step>
+  <Step title="Login">
+    With the account now active, the client POSTs credentials to `/api/user/login`. The API checks that `login_code_confirmed` is set and that the `activate` array contains `{name: "Activado", value: "1"}` before issuing a JWT.
+  </Step>
+</Steps>
+
+## Role System
+
+User roles are stored as an array of `{name, value}` objects on the User document. TuKit defines two roles:
+
+| Role name | Value | Description |
+|-----------|-------|-------------|
+| `Usuario` | `"1"` | Standard registered user — the default assigned on registration. |
+| `admin`   | `"2"` | Administrator — can manage other users' roles and access admin-only endpoints. |
+
+Roles can be updated by an administrator via `PUT /api/user/update-roles/:userId/:adminId`. The API verifies that the requesting `adminId` belongs to a user whose `roles` array contains `{name: "admin", value: "2"}` before applying the change.
+
+## Activate Field
+
+The `activate` field mirrors the role structure — an array of `{name, value}` objects — and controls whether a user may log in:
+
+| Name       | Value | Meaning |
+|------------|-------|---------|
+| `Activado` | `"1"` | Account is active; the user has successfully verified their email. |
+| `Inactivo` | `"2"` | Account is pending verification; login is blocked. |
+
+Google OAuth accounts are created with `activate: [{name: "Activado", value: "1"}]` immediately, since Google has already verified the email address.
+
+<Note>
+  All protected endpoints require the JWT to be passed in the **`token-access`** request header. This is a custom header — it is **not** the standard `Authorization: Bearer <token>` pattern used by many other APIs.
+</Note>
