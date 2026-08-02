@@ -1,7 +1,7 @@
 ---
-title: "Search Products by Title in the TuKit Marketplace"
+title: "Search Products by Title in the TuKit Sporting Marketplace"
 sidebarTitle: "Search Products"
-description: "Search marketplace products by title keyword within a specific category. Two dedicated endpoints cover uniform and typography searches with pagination and payment-type filtering."
+description: "Search TuKit products by title within a category. Separate endpoints cover uniforms and typography, with pagination and payment-type filtering."
 ---
 
 TuKit exposes two category-scoped search endpoints that accept a free-text `query` parameter and match it against product titles using a case-insensitive MongoDB regex. One endpoint searches only products in the `"Uniforme"` category and the other searches only `"Tipografia"`. Both endpoints support optional pagination via path parameters and accept an optional `typeProduct` body field to further narrow results to paid or free products. Results are sorted by newest first (`_id: -1`) and include a `pagination` object so clients can implement page controls.
@@ -245,7 +245,7 @@ TuKit exposes two category-scoped search endpoints that accept a free-text `quer
         }
       ],
       "pagination": {
-        "pag": undefined,
+        "pag": null,
         "perpage": 10,
         "pags": 1
       }

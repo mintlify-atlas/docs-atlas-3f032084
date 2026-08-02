@@ -8,15 +8,10 @@ TuKit applies consistent pagination across all list endpoints using a shared `Pa
 
 ## URL Pattern
 
-All paginated endpoints follow this pattern:
+All paginated endpoints embed the page number and results per page directly in the URL path. Here are the paginated routes currently defined across the user, product, and shopping-cart routers:
 
 ```
-POST /api/<resource>/list-<suffix>/:pag?/:perpage?
-```
-
-Here are the paginated routes currently defined across the product and shopping-cart routers:
-
-```
+POST /api/user/list/:adminId/user/:pag?/:perpage?
 POST /api/product/search-uniform/:query/:pag?/:perpage?
 POST /api/product/search-typography/:query/:pag?/:perpage?
 POST /api/product/get-all-products-uni-typo/:typeCategory/:pag?/:perpage?

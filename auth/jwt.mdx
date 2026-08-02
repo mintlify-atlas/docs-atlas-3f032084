@@ -134,12 +134,13 @@ curl -X POST https://your-api.com/api/product/agregate \
 
 ## Password Recovery
 
-Forgotten passwords are reset through a two-step code-verification flow. Neither step requires an active session.
+Forgotten passwords are reset through a two-step code-verification flow. **Both steps require a valid JWT** passed in the `token-access` header — the `Token` middleware guards both routes.
 
 **Step 1 — Request a recovery code**
 
 ```http
 POST /api/user/recovery-password
+token-access: <your-jwt>
 Content-Type: application/json
 
 {
@@ -160,6 +161,7 @@ The API generates a new 5-digit code, stores it in `code_newpass`, and emails it
 
 ```http
 POST /api/user/update-password/:email
+token-access: <your-jwt>
 Content-Type: application/json
 
 {
@@ -176,6 +178,15 @@ Replace `:email` with the user's URL-encoded email address. The API verifies tha
   "status": true
 }
 ```
+
+**Alternative — Update password without a code**
+
+```http
+POST /api/user/update-password/:emails/no-code
+Content-Type: application/json
+```
+
+This route (`updatePasswordNoCode`) does **not** use the `Token` middleware and is marked incomplete in the source (`//* Sin terminar`). It is not yet production-ready and its request/response contract may change.
 
 ## Token Middleware
 

@@ -1,7 +1,7 @@
 ---
-title: "Create a New Product in the TuKit Marketplace"
+title: "Create a New Product in the TuKit Sporting Marketplace"
 sidebarTitle: "Create Product"
-description: "Add a new sporting design product (uniform or typography) to the marketplace. Requires an admin level 2 token and accepts multipart/form-data with optional file uploads."
+description: "Add a sporting design product to the TuKit marketplace. Requires admin level 2 and multipart/form-data with up to four optional file uploads."
 ---
 
 The Create Product endpoint allows an authenticated admin to publish a new sporting design to the TuKit marketplace. Requests must be sent as `multipart/form-data` because the endpoint uses [Multer](https://github.com/expressjs/multer) to handle up to four file fields alongside the text body. Only users whose role has `name: "admin"` and `value: "2"` are permitted to call this endpoint; all other authenticated users receive a `203` rejection. File fields that are omitted are stored as empty arrays on the product document, so they are all optional at the HTTP level even though meaningful products will generally include at least an image.

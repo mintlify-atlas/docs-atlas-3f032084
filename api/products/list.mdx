@@ -1,7 +1,7 @@
 ---
-title: "List All Products by Category or Payment Type"
+title: "List All TuKit Products by Category or Payment Type"
 sidebarTitle: "List Products"
-description: "Browse all marketplace products filtered by category (uniform vs. typography) or payment type (paid vs. free) with built-in pagination. Requires a valid token-access JWT."
+description: "Browse all TuKit products filtered by category (uniform or typography) or payment type (paid or free) with built-in pagination. Requires a JWT."
 ---
 
 TuKit provides two bulk-listing endpoints for browsing the full product catalogue. The first, `get-all-products-uni-typo`, partitions the catalogue by **category** — pass a positive numeric value in `:typeCategory` to receive uniforms, or zero/negative to receive typography products. The second, `get-all-products-payment-free`, partitions by **payment type** — positive returns paid products and zero/negative returns free products. Both endpoints support optional pagination through path parameters handled by the `Paginate` middleware, sort results by newest first (`_id: -1`), and return the same response shape including a `pagination` metadata object.

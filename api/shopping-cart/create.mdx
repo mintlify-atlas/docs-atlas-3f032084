@@ -1,5 +1,5 @@
 ---
-title: "Create a Shopping Cart Order — TuKit API"
+title: "Create a Shopping Cart Purchase Order — TuKit API"
 sidebarTitle: "Create Order"
 description: "Register a new purchase order for a product. The buyer must then upload a payment proof image before the seller can confirm the transaction."
 ---
@@ -45,32 +45,20 @@ A valid JWT must be passed in the `token-access` request header. The token is ob
 ## Request body
 
 <ParamField body="products" type="array" required>
-  Array of product objects included in the order. Each element is used to calculate a line-item `subtotal`.
+  Array of product objects used **only** to compute the order total. The controller iterates this array to sum subtotals; the actual product snapshot stored on the cart document is always fetched from the database using `productId`. Only `price` (and optionally `discountPrice`) are read from each element for the calculation.
 
   <Expandable title="Product object fields">
-    <ParamField body="_id" type="string" required>
-      MongoDB `_id` of the product.
-    </ParamField>
-    <ParamField body="title" type="string" required>
-      Display title of the product.
-    </ParamField>
-    <ParamField body="category" type="string" required>
-      Product category. Accepted values: `"Uniforme"` or `"Tipografía"`.
-    </ParamField>
     <ParamField body="price" type="number" required>
       Base price. Used for the subtotal calculation when `discountPrice` is not provided.
     </ParamField>
     <ParamField body="discountPrice" type="string">
       Discounted price as a numeric string (e.g. `"9.99"`). When present and non-empty, the controller uses this value instead of `price` to calculate the subtotal.
     </ParamField>
-    <ParamField body="typeProduct" type="string" required>
-      Pricing model. Accepted values: `"Pago"` or `"Gratuito"`.
+    <ParamField body="_id" type="string">
+      MongoDB `_id` of the product. Read by the controller but not stored on the cart — the cart's product snapshot is sourced from the DB document.
     </ParamField>
-    <ParamField body="format" type="string" required>
-      File or delivery format of the product.
-    </ParamField>
-    <ParamField body="discount" type="string">
-      Human-readable discount label (e.g. `"Sin descuento"`).
+    <ParamField body="title" type="string">
+      Display title of the product. Read by the controller but not stored on the cart.
     </ParamField>
   </Expandable>
 </ParamField>

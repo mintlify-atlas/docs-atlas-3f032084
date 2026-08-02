@@ -1,10 +1,10 @@
 ---
-title: "Confirm or Pend a Cart Payment — TuKit API"
+title: "Confirm or Set Pending a Cart Payment — TuKit API"
 sidebarTitle: "Confirm Payment"
 description: "Allows the product seller to validate or mark as pending the payment on a shopping cart order, after the buyer has uploaded proof of payment."
 ---
 
-Once a buyer has uploaded their payment proof via [Upload Proof](/api/shopping-cart/upload-proof), the seller who owns one of the products in the cart can call this endpoint to update the `confirmed_payment` status. The controller first validates that `shoppingCartId` is a well-formed MongoDB ObjectId, then verifies the cart exists, and finally checks that the authenticated user's `_id` matches the `user._id` of at least one product in the cart's `products` array — confirming they are the seller. When the payment is fully confirmed (`key: 1, name: "Pago"`), the server also decrements `minCant` on the corresponding `Product` document to reflect stock consumed.
+Once a buyer has uploaded their payment proof via [Upload Proof](/api/shopping-cart/upload-proof), the seller who owns one of the products in the cart can call this endpoint to update the `confirmed_payment` status. The controller first validates that `shoppingCartId` is a well-formed MongoDB ObjectId, then verifies the cart exists, and finally checks that the authenticated user's `_id` matches the `user._id` of at least one product in the cart's `products` array — confirming they are the seller. When the payment is fully confirmed (`key: 1, name: "Pago"`), the server also decrements `minCant` via a `ShoppingCart.findOneAndUpdate` call targeted at the matching product subdocument's `_id`, reducing the available quantity by the cart's `cantBuy` value.
 
 ## Method and path
 
@@ -50,7 +50,7 @@ A valid JWT must be passed in the `token-access` request header. The authenticat
 </ParamField>
 
 <Note>
-  When `confirmed_payment.key === 1` and `confirmed_payment.name === "Pago"`, the server performs an additional write: it decrements `minCant` on the `Product` document by the cart's `cantBuy` value (always `1`), signalling that one licence or copy of the design has been consumed.
+  When `confirmed_payment.key === 1` and `confirmed_payment.name === "Pago"`, the server performs an additional write: it calls `ShoppingCart.findOneAndUpdate({ _id: product._id }, { $inc: { minCant: -cantBuy } })` where `product._id` is the `_id` of the matching product subdocument inside the cart. This decrements `minCant` by the cart's `cantBuy` value (always `1`) to signal that one copy of the design has been consumed.
 </Note>
 
 ## Responses

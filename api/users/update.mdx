@@ -1,7 +1,7 @@
 ---
 title: "Update a TuKit User Profile — TuKit API"
 sidebarTitle: "Update User"
-description: "Update the display name of an existing user account. Requires a valid JWT and the requesting user can only update their own account."
+description: "Update display name or password for a TuKit user account. Includes recovery-password and update-password endpoints. Requires a valid JWT."
 ---
 
 This endpoint allows an authenticated user to update their own profile information. Currently, the only mutable field exposed through this endpoint is `userName`. The user document is located by the `userId` path parameter, and as a safety check the controller also verifies that the resolved document's `_id` matches the supplied `userId` — a mismatch returns a `403` error. Users can only modify their own account; updating another user's profile requires no separate permission check beyond the ID match, so ensure the `userId` in the URL corresponds to the token owner's ID.
@@ -72,7 +72,7 @@ This endpoint allows an authenticated user to update their own profile informati
 | `500`  | Unexpected server or database error. |
 
 <Note>
-  To update other account properties such as `password` or `roles`, use the dedicated [Update Roles](/api/users/roles) or password-update endpoints.
+  To update other account properties such as `password` or `roles`, use the dedicated [Update Roles](/api/users/roles) endpoint or the [Recovery Password](#recovery-password) and [Update Password](#update-password) sections below.
 </Note>
 
 ## Example
@@ -117,6 +117,171 @@ curl -X POST https://your-tukit-api.com/api/user/update-user/64f1a2b3c4d5e6f7a8b
 ```json
 {
   "msj": "No tienes permitido hacer esta función",
+  "status": false
+}
+```
+
+---
+
+## Recovery Password
+
+Initiates a password-reset flow for an existing account. The controller generates a random 5-digit code, stores it as `code_newpass` on the user document, and dispatches it to the account's registered email address via Nodemailer. The code must then be submitted to the [Update Password](#update-password) endpoint below to complete the reset.
+
+**POST** `/api/user/recovery-password`
+
+### Authentication
+
+<ParamField header="token-access" type="string" required>
+  A valid JWT obtained from the [Login](/api/users/login) endpoint. The `Token` middleware validates this header before the controller runs.
+</ParamField>
+
+### Request Body
+
+<ParamField body="email" type="string" required>
+  The registered email address of the account whose password should be reset. If no account is found for this address, the request is rejected with a `203` response.
+</ParamField>
+
+### Response
+
+#### 200 — Success
+
+<ResponseField name="msj" type="string">
+  Confirmation that the 5-digit reset code has been sent: `"Te hemos enviado un código de 5 dígitos a tu correo para verificar el cambio de contraseña"`.
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  Always `true` on success.
+</ResponseField>
+
+<Note>
+  The reset code is stored in the `code_newpass` field on the user document. It is not returned in the response — it is delivered exclusively by email (via Nodemailer). Do not expose or cache this value client-side.
+</Note>
+
+### Error Responses
+
+| Status | Cause |
+|--------|-------|
+| `203`  | No user document was found for the provided `email` address. |
+| `500`  | Unexpected server or database error. |
+
+### Example
+
+```bash
+curl -X POST https://your-tukit-api.com/api/user/recovery-password \
+  -H "Content-Type: application/json" \
+  -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "email": "marcos@example.com"
+  }'
+```
+
+**Success response:**
+
+```json
+{
+  "msj": "Te hemos enviado un código de 5 dígitos a tu correo para verificar el cambio de contraseña",
+  "status": true
+}
+```
+
+**Error — email not found:**
+
+```json
+{
+  "msj": "Correo no encontrado. Por favor, ingresa un correo válido",
+  "status": false
+}
+```
+
+---
+
+## Update Password
+
+Completes the password-reset flow. The caller supplies the 5-digit code that was emailed by the [Recovery Password](#recovery-password) endpoint along with the desired new password. If the code matches the `code_newpass` stored on the user document, the password is hashed with bcrypt and saved, and both code fields are cleared from the document.
+
+**POST** `/api/user/update-password/:email`
+
+### Authentication
+
+<ParamField header="token-access" type="string" required>
+  A valid JWT obtained from the [Login](/api/users/login) endpoint. The `Token` middleware validates this header before the controller runs.
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="email" type="string" required>
+  The registered email address of the account whose password is being reset.
+</ParamField>
+
+### Request Body
+
+<ParamField body="code_confirm_pass" type="string" required>
+  The 5-digit verification code that was sent to the user's email by the Recovery Password endpoint. Must match the `code_newpass` field stored on the user document.
+</ParamField>
+
+<ParamField body="newPassword" type="string" required>
+  The new plain-text password to set on the account. It is hashed with bcrypt (cost factor 10) before storage.
+</ParamField>
+
+### Response
+
+#### 200 — Success
+
+<ResponseField name="msj" type="string">
+  Confirmation that the password was changed: `"Contraseña actualizada correctamente"`.
+</ResponseField>
+
+<ResponseField name="status" type="boolean">
+  Always `true` on success.
+</ResponseField>
+
+<Note>
+  On success the `code_newpass` and `code_confirm_pass` fields on the user document are both cleared to an empty string, invalidating the one-time reset code immediately.
+</Note>
+
+### Error Responses
+
+| Status | Cause |
+|--------|-------|
+| `404`  | No user document was found for the provided `:email` path parameter. |
+| `203`  | The supplied `code_confirm_pass` does not match the `code_newpass` stored on the user document. |
+| `500`  | Unexpected server or database error. |
+
+### Example
+
+```bash
+curl -X POST https://your-tukit-api.com/api/user/update-password/marcos@example.com \
+  -H "Content-Type: application/json" \
+  -H "token-access: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "code_confirm_pass": "34512",
+    "newPassword": "NewSecret456"
+  }'
+```
+
+**Success response:**
+
+```json
+{
+  "msj": "Contraseña actualizada correctamente",
+  "status": true
+}
+```
+
+**Error — wrong code:**
+
+```json
+{
+  "msj": "Código de verificación incorrecto. Por favor, ingresa nuevamente el código",
+  "status": false
+}
+```
+
+**Error — email not found:**
+
+```json
+{
+  "msj": "Correo no encontrado. Por favor, ingresa un correo válido",
   "status": false
 }
 ```

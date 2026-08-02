@@ -45,7 +45,7 @@ User roles are stored as an array of `{name, value}` objects on the User documen
 | `Usuario` | `"1"` | Standard registered user — the default assigned on registration. |
 | `admin`   | `"2"` | Administrator — can manage other users' roles and access admin-only endpoints. |
 
-Roles can be updated by an administrator via `PUT /api/user/update-roles/:userId/:adminId`. The API verifies that the requesting `adminId` belongs to a user whose `roles` array contains `{name: "admin", value: "2"}` before applying the change.
+Roles can be updated by an administrator via `POST /api/user/update-role/:userId/:adminId`. The API verifies that the requesting `adminId` belongs to a user whose `roles` array contains `{name: "admin", value: "2"}` before applying the change.
 
 ## Activate Field
 

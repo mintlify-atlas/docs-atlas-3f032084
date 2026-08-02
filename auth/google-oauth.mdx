@@ -55,7 +55,7 @@ GET /auth/google/callback
 
 ## How It Works
 
-The Passport strategy is configured in `src/middleware/lib/passport.js` and loaded into `src/app.js` at startup via `require("./middleware/lib/passport")`. The `verify` callback receives `accessToken`, `refreshToken`, and the Google `profile` object. It then follows this logic:
+The Passport strategy is configured in `src/middleware/lib/passport.js` and loaded into `src/app.js` at startup via `require("./middleware/lib/passport")`. The `verify` callback receives the Google `profile` object and the `done` callback (the implementation omits the `accessToken` and `refreshToken` arguments since they are not used). It then follows this logic:
 
 1. **Existing user** — if a User document with `googleId === profile.id` already exists in MongoDB, a new JWT is signed for that user (`expiresIn: "365"`), stored on the document, and the user is passed to `done`.
 2. **New user** — if no matching document is found, a new User is created with:

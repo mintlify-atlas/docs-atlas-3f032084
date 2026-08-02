@@ -1,7 +1,7 @@
 ---
-title: "Upload Payment Proof to a Cart — TuKit API"
+title: "Upload a Payment Proof Image to a Cart — TuKit API"
 sidebarTitle: "Upload Proof"
-description: "Attach one or more payment proof images to an existing shopping cart order so the seller can review and confirm the transaction."
+description: "Attach one or more payment proof images to an existing shopping cart order so the seller can review and confirm the buyer's transaction."
 ---
 
 After a buyer creates an order with [Create Order](/api/shopping-cart/create), they must provide evidence that payment was made before the seller can confirm the purchase. This endpoint accepts one or more image files via `multipart/form-data` under the `image_proof` field. The server processes each image through Google Cloud Storage using the `imageGenerate` utility, records the upload date in `YYYY_M_D` format in the `image_proof_date` field, and returns the updated `ShoppingCart` document. Only the authenticated user who owns the cart (i.e. the original buyer) is permitted to upload proof — any other authenticated user receives a `203` permission error.

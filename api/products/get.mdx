@@ -1,7 +1,7 @@
 ---
-title: "Get a Single Product by ID from TuKit"
+title: "Get a Single Product by ID from the TuKit Marketplace"
 sidebarTitle: "Get Product"
-description: "Retrieve the full details of a single marketplace product using its MongoDB ObjectId. Requires a valid token-access JWT. Returns the complete product document."
+description: "Retrieve the full details of a single product by its MongoDB ObjectId. Requires a valid token-access JWT. Returns the complete product document."
 ---
 
 The Get Product endpoint fetches a single product document from the database by its MongoDB ObjectId. Any authenticated user (not just admins) may call this endpoint to load a complete product record including its file URLs, pricing, category, creator snapshot, and Mongoose timestamps. If the product exists, it is returned in the `data` field. If the lookup fails — for example because the ID is malformed or the document has been deleted — the server returns HTTP `203` with a descriptive error message. Unexpected infrastructure errors return `500`.

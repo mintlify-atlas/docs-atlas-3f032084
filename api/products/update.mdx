@@ -1,7 +1,7 @@
 ---
 title: "Update an Existing Product in the TuKit Marketplace"
 sidebarTitle: "Update Product"
-description: "Modify the fields or files of an existing product by its ID. Requires admin level 2 authentication and accepts multipart/form-data with optional file replacements."
+description: "Modify fields or replace files on an existing product by ID. Requires admin level 2 authentication and accepts multipart/form-data."
 ---
 
 The Update Product endpoint lets an admin partially or fully overwrite an existing marketplace product. All body fields and file fields are optional — only the values you include are applied, and any file you upload replaces the corresponding stored file on the server. The endpoint first checks that the product exists, then verifies admin level 2 authorization before making any changes. If a numeric `discount` value is supplied, the endpoint automatically recalculates and persists `discountPrice` as `price * (1 - discount / 100)`.
@@ -73,7 +73,7 @@ This endpoint accepts `multipart/form-data`. All fields are optional; omitted fi
 
 ### File Fields
 
-Each file field accepts at most **1 file**. Providing a file replaces the existing stored file for that field.
+Each file field accepts at most **1 file**. A new file is only written to the product document if the processed result differs from the currently stored value — if the uploaded file produces a path identical to the one already saved, the field is left unchanged.
 
 <ParamField body="archivoUrl" type="file">
   Replacement design file. Replaces the previously stored design file.
@@ -178,9 +178,16 @@ Each file field accepts at most **1 file**. Providing a file replaces the existi
 ## Discount Calculation
 
 <Note>
-  When you supply a `discount` string whose numeric value is valid (e.g.
-  `"10"`, `"25.5"`) **and** the request also includes a `price` value,
-  the server automatically sets:
+  The server calculates and stores `discountPrice` only when **all three**
+  conditions in the controller are met:
+
+  ```js
+  typeof discount === 'string' && !isNaN(parseFloat(discount)) && isFinite(price)
+  ```
+
+  In practice this means: `discount` must be sent as a numeric string (e.g.
+  `"10"`, `"25.5"`), **and** a finite numeric `price` must also be included
+  in the same request body. When both are present, the server sets:
 
   ```
   discountPrice = price × (1 − discount / 100)

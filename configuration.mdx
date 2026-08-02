@@ -47,7 +47,7 @@ TuKit reads all runtime configuration from environment variables using `dotenv`.
 </ParamField>
 
 <ParamField body="CLIENT_URL" type="string" required>
-  The base URL of your frontend application or callback host. This value is used when constructing OAuth redirect URIs and any absolute URLs embedded in outgoing emails (e.g. verification links). For local development set this to `http://localhost:3000`. In production, set it to your deployed frontend domain such as `https://app.example.com`.
+  The full OAuth callback URL passed directly as `callbackURL` to the `passport-google-oauth20` strategy. This must exactly match one of the **Authorised redirect URIs** registered in Google Cloud Console. For local development set this to `http://localhost:3000/auth/google/callback`. In production, set it to your deployed domain's callback path such as `https://api.example.com/auth/google/callback`.
 </ParamField>
 
 ## Complete .env Example
@@ -70,7 +70,7 @@ NAMEGOOGLECLOUD=tukit-designs-bucket
 # Google OAuth 2.0
 CLIENT_ID=123456789-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com
 CLIENT_SECRET=GOCSPX-aBcDeFgHiJkLmNoPqRsTuVwXyZ
-CLIENT_URL=http://localhost:3000
+CLIENT_URL=http://localhost:3000/auth/google/callback
 ```
 
 <Warning>
